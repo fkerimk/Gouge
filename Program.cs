@@ -4,6 +4,8 @@ using Sickle.Heart.Map;
 using static Sickle.Heart.Core.Button;
 
 internal static class Program {
+
+    private static bool _mode3D;
     
     private const float VertexSelectDistance = 0.15f;
     
@@ -17,9 +19,13 @@ internal static class Program {
         CreateDefaultPart();
 
         while (Window.IsAlive()) {
+
+            if (Input.IsButtonPressed(KeyBoardSpace))
+                _mode3D = !_mode3D;
             
-            MoveSelectedVertex();
-            Zoom();
+            if (!_mode3D) MoveSelectedVertex();
+            
+            Camera();
             Draw();
         }
 
@@ -34,7 +40,6 @@ internal static class Program {
         part.Vertices.Add(new Vector2(-5,  5));
         part.Vertices.Add(new Vector2( 5,  5));
         part.Vertices.Add(new Vector2( 5, -5));
-        part.Vertices.Add(new Vector2( 6, -6));
 
         Map.Parts.Add(part);
     }
@@ -77,7 +82,7 @@ internal static class Program {
         Map.DeleteVertex(_selectedVertex);
     }
 
-    private static void Zoom() {
+    private static void Camera() {
         
         if (Input.IsButtonDown(MouseMiddle))
             Render.Cam2D.Target -= Input.MouseDelta / Render.Cam2D.Zoom;
@@ -95,37 +100,50 @@ internal static class Program {
     private static void Draw() {
         
         Render.Start();
-        Render.Begin2D();
 
-        DrawGrid();
-
-        var hoveredVertex = _selectedVertex == (-1, -1)
-            ? FindHoveredVertex()
-            : (-1, -1);
-
-        Vector2? previewVertex = null;
-
-        if (_selectedVertex == (-1, -1)) {
+        if (_mode3D) {
             
-            if (hoveredVertex == (-1, -1) && Map.TryFindPointOnLine(out var point, out _, out _))
-                previewVertex = point;
+            Render.Begin3D();
+            
+            Render.Map(Map);
+            
+            Render.End3D();
+            
+        } else {
+            
+            Render.Begin2D();
 
-            if (Input.IsButtonDown(MouseRight) && hoveredVertex != (-1, -1)) {
+            DrawGrid();
+
+            var hoveredVertex = _selectedVertex == (-1, -1)
+                ? FindHoveredVertex()
+                : (-1, -1);
+
+            Vector2? previewVertex = null;
+
+            if (_selectedVertex == (-1, -1)) {
+            
+                if (hoveredVertex == (-1, -1) && Map.TryFindPointOnLine(out var point, out _, out _))
+                    previewVertex = point;
+
+                if (Input.IsButtonDown(MouseRight) && hoveredVertex != (-1, -1)) {
                 
-                Map.DeleteVertex(hoveredVertex);
-                hoveredVertex = (-1, -1);
-            }
+                    Map.DeleteVertex(hoveredVertex);
+                    hoveredVertex = (-1, -1);
+                }
             
-            else if (Input.IsButtonDown(MouseLeft))
-                SelectOrInsertVertex(hoveredVertex);
+                else if (Input.IsButtonDown(MouseLeft))
+                    SelectOrInsertVertex(hoveredVertex);
+            }
+
+            DrawParts(hoveredVertex);
+
+            if (previewVertex.HasValue)
+                Render.Square(Colors.Orange, previewVertex.Value, .1f);
+
+            Render.End2D();
         }
-
-        DrawParts(hoveredVertex);
-
-        if (previewVertex.HasValue)
-            Render.Square(Colors.Orange, previewVertex.Value, .1f);
-
-        Render.End2D();
+        
         Render.Stop();
     }
 
