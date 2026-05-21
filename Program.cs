@@ -1,28 +1,32 @@
 ﻿using System.Numerics;
+
 using Sickle.Heart.Core;
 using Sickle.Heart.Map;
-using static Sickle.Heart.Core.Button;
-using static Raylib_cs.Raylib;
 
-internal static class Program {
+using static Sickle.Heart.Core.Button;
+
+internal static partial class Program {
 
     private static readonly Map Map = new();
+    private static readonly string[] TextureFiles = Resources.GetResourceFiles("texture");
     
     private static bool _mode3D;
     
-    private const float Camera3DHeight = 2.5f;
-    private const float Camera3DMoveSpeed = 6f;
-    private const float Camera3DMouseSensitivity = 0.0035f;
-    private const float Camera3DPitchLimit = 1.35f;
-    private static float _camera3DYaw = -MathF.PI * 0.5f;
-    private static float _camera3DPitch = -0.35f;
+    private const float VertexSelectPixels = 10f;
+    private const float LineSelectPixels = 8f;
     
+    private static int _activePart = -1;
+    private static (int part, Vector2 mouseStart, List<Vector2> vertices)? _selectedPart;
+    private static ((int part, int start, int end) edge, Vector2 mouseStart, Vector2 startVertex, Vector2 endVertex)? _selectedLine;
     private static (int part, int vertex) _selectedVertex = (-1, -1);
-    private const float VertexSelectDistance = 0.15f;
+    
+    private static Vector2? _rectStart;
+    private static int _rectParentPart = -1;
 
     public static void Main() {
         
         Window.Open();
+        Gui.Setup();
 
         CreateDefaultPart();
 
@@ -31,12 +35,18 @@ internal static class Program {
             if (Input.IsButtonPressed(KeyBoardSpace))
                 _mode3D = !_mode3D;
             
-            if (!_mode3D) MoveSelectedVertex();
+            if (!_mode3D) {
+                
+                MoveSelectedVertex();
+                MoveSelectedLine();
+                MoveSelectedPart();
+            }
             
-            Camera();
+            UpdateCamera();
             Draw();
         }
 
+        Gui.Shutdown();
         Window.Close();
     }
 
@@ -50,6 +60,7 @@ internal static class Program {
         part.Vertices.Add(new Vector2( 5, -5));
 
         Map.Parts.Add(part);
+        _activePart = 0;
     }
 
     private static void MoveSelectedVertex() {
@@ -67,6 +78,38 @@ internal static class Program {
         _selectedVertex = (-1, -1);
     }
 
+    private static void MoveSelectedLine() {
+
+        if (!_selectedLine.HasValue) return;
+
+        var selection = _selectedLine.Value;
+        var delta = Snap(Input.MouseWorldPos) - selection.mouseStart;
+        var vertices = Map.Parts[selection.edge.part].Vertices;
+
+        vertices[selection.edge.start] = selection.startVertex + delta;
+        vertices[selection.edge.end] = selection.endVertex + delta;
+
+        if (!Input.IsButtonUp(MouseLeft)) return;
+
+        _selectedLine = null;
+    }
+
+    private static void MoveSelectedPart() {
+
+        if (!_selectedPart.HasValue) return;
+
+        var selection = _selectedPart.Value;
+        var delta = Snap(Input.MouseWorldPos) - selection.mouseStart;
+        var vertices = Map.Parts[selection.part].Vertices;
+
+        for (var i = 0; i < vertices.Count; i++)
+            vertices[i] = selection.vertices[i] + delta;
+
+        if (!Input.IsButtonUp(MouseLeft)) return;
+
+        _selectedPart = null;
+    }
+
     private static Vector2 Snap(Vector2 position) {
         
         var snap = Input.IsButtonDown(KeyBoardLeftAlt) ? 10f : 1f;
@@ -79,118 +122,13 @@ internal static class Program {
     }
     
     private static void TryMergeVertex(Vector2 position) {
-        
-        if (!Map.Parts
-                .Select(part => part.Vertices)
-                .Where((vertices, i) => vertices
-                    .Where((_, j) => _selectedVertex != (i, j))
-                    .Any(t => !(Vector2.DistanceSquared(t, position) > float.Epsilon * float.Epsilon)))
-                .Any()) return;
+
+        var vertices = Map.Parts[_selectedVertex.part].Vertices;
+
+        if (vertices.Where((_, i) => i != _selectedVertex.vertex).All(vertex => Vector2.DistanceSquared(vertex, position) > float.Epsilon * float.Epsilon))
+            return;
         
         Map.DeleteVertex(_selectedVertex);
-    }
-
-    private static void Camera() {
-
-        if (_mode3D) {
-
-            if (Input.IsButtonDown(MouseRight)) {
-
-                var mouseDelta = Input.MouseDelta;
-                
-                _camera3DYaw += mouseDelta.X * Camera3DMouseSensitivity;
-                _camera3DPitch = Math.Clamp(_camera3DPitch - mouseDelta.Y * Camera3DMouseSensitivity, -Camera3DPitchLimit, Camera3DPitchLimit);
-            }
-
-            var forward = new Vector3(
-                
-                MathF.Cos(_camera3DPitch) * MathF.Cos(_camera3DYaw),
-                MathF.Sin(_camera3DPitch),
-                MathF.Cos(_camera3DPitch) * MathF.Sin(_camera3DYaw)
-            );
-
-            var forward2D = Vector2.Normalize(new Vector2(forward.X, forward.Z));
-            var right2D = new Vector2(-forward2D.Y, forward2D.X);
-            
-            var move = Vector2.Zero;
-
-            if (Input.IsButtonDown(KeyBoardW)) move += forward2D;
-            if (Input.IsButtonDown(KeyBoardS)) move -= forward2D;
-            if (Input.IsButtonDown(KeyBoardA)) move -= right2D;
-            if (Input.IsButtonDown(KeyBoardD)) move += right2D;
-
-            if (move != Vector2.Zero)
-                Render.Cam2D.Target += Vector2.Normalize(move) * Camera3DMoveSpeed * GetFrameTime();
-
-            Render.Cam3D.Position = new Vector3(Render.Cam2D.Target.X, Camera3DHeight, Render.Cam2D.Target.Y);
-            Render.Cam3D.Target = Render.Cam3D.Position + forward;
-            Render.Cam3D.Up = Vector3.UnitY;
-            
-        } else {
-            
-            if (Input.IsButtonDown(MouseMiddle))
-                Render.Cam2D.Target -= Input.MouseDelta / Render.Cam2D.Zoom;
-
-            if (Input.MouseScroll == 0) return;
-
-            var mouseWorldBeforeZoom = Input.MouseWorldPos;
-
-            Render.Cam2D.Zoom += Input.MouseScroll * Render.Cam2D.Zoom / 2f;
-            Render.Cam2D.Zoom = MathF.Max(Render.Cam2D.Zoom, 2f);
-
-            Render.Cam2D.Target = mouseWorldBeforeZoom - (Input.MousePos - Render.Cam2D.Offset) / Render.Cam2D.Zoom;
-
-        }
-    }
-
-    private static void Draw() {
-        
-        Render.Start();
-
-        if (_mode3D) {
-            
-            Render.Begin3D();
-            
-            Render.Map(Map);
-            
-            Render.End3D();
-            
-        } else {
-            
-            Render.Begin2D();
-
-            DrawGrid();
-
-            var hoveredVertex = _selectedVertex == (-1, -1)
-                ? FindHoveredVertex()
-                : (-1, -1);
-
-            Vector2? previewVertex = null;
-
-            if (_selectedVertex == (-1, -1)) {
-            
-                if (hoveredVertex == (-1, -1) && Map.TryFindPointOnLine(out var point, out _, out _))
-                    previewVertex = point;
-
-                if (Input.IsButtonDown(MouseRight) && hoveredVertex != (-1, -1)) {
-                
-                    Map.DeleteVertex(hoveredVertex);
-                    hoveredVertex = (-1, -1);
-                }
-            
-                else if (Input.IsButtonDown(MouseLeft))
-                    SelectOrInsertVertex(hoveredVertex);
-            }
-
-            DrawParts(hoveredVertex);
-
-            if (previewVertex.HasValue)
-                Render.Square(Colors.Orange, previewVertex.Value, .1f);
-
-            Render.End2D();
-        }
-        
-        Render.Stop();
     }
 
     private static void DrawGrid() {
@@ -204,19 +142,34 @@ internal static class Program {
     }
 
     private static (int part, int vertex) FindHoveredVertex() {
-        
+
+        var bestDistance = GetVertexSelectDistance();
+        var hovered = (-1, -1);
+
         for (var i = 0; i < Map.Parts.Count; i++) {
             
             var vertices = Map.Parts[i].Vertices;
 
             for (var j = 0; j < vertices.Count; j++) {
-                
-                if (Util.Distance(Input.MouseWorldPos, vertices[j]) <= VertexSelectDistance)
-                    return (i, j);
+
+                var distance = Util.Distance(Input.MouseWorldPos, vertices[j]);
+
+                if (distance > bestDistance)
+                    continue;
+
+                bestDistance = distance;
+                hovered = (i, j);
             }
         }
 
-        return (-1, -1);
+        return hovered;
+    }
+
+    private static (int part, int start, int end, Vector2 point) FindHoveredLine() {
+        
+        return !Map.TryFindLine(GetLineSelectDistance(), out var point, out var partIndex, out var startIndex, out var endIndex)
+            ? (-1, -1, -1, Vector2.Zero)
+            : (partIndex, startIndex, endIndex, point);
     }
 
     private static void SelectOrInsertVertex((int part, int vertex) hoveredVertex) {
@@ -224,29 +177,33 @@ internal static class Program {
         if (hoveredVertex != (-1, -1)) {
             
             _selectedVertex = hoveredVertex;
+            _activePart = hoveredVertex.part;
+            
             return;
         }
 
-        if (!Map.TryFindPointOnLine(out var point, out var partIndex, out var insertIndex)) return;
+        if (!Map.TryFindPointOnLine(GetLineSelectDistance(), out var point, out var partIndex, out var insertIndex)) return;
 
         Map.InsertVertex(partIndex, insertIndex, point);
+        
         _selectedVertex = (partIndex, insertIndex);
+        _activePart = partIndex;
     }
 
-    private static void DrawParts((int part, int vertex) hoveredVertex) {
+    private static void DrawParts((int part, int vertex) hoveredVertex, (int part, int start, int end, Vector2 point) hoveredLine, int hoveredPart) {
         
         for (var i = 0; i < Map.Parts.Count; i++) {
             
             var part = Map.Parts[i];
             var vertices = part.Vertices;
 
-            Render.Shape(vertices, Colors.Part, Colors.PartFail);
+            Render.Shape(vertices, GetPartColor(i, hoveredPart), Colors.PartFail);
 
             for (var j = 0; j < vertices.Count; j++) {
                 
                 var vertex = vertices[j];
 
-                DrawEdge(vertices, j);
+                DrawEdge(vertices, j, hoveredLine.part == i && hoveredLine.start == j && hoveredLine.end == (j + 1) % vertices.Count);
 
                 var color = _selectedVertex == (i, j) || hoveredVertex == (i, j)
                     ? Colors.Orange
@@ -257,18 +214,263 @@ internal static class Program {
         }
     }
 
-    private static void DrawEdge(List<Vector2> vertices, int index) {
+    private static Raylib_cs.Color GetPartColor(int partIndex, int hoveredPart) {
+        
+        if (_activePart != partIndex) return hoveredPart == partIndex ? Colors.PartHover : Colors.Part;
+        
+        var pulse = (MathF.Sin(Time.Total * 5f) + 1f) * 0.5f;
+        var alpha = (byte)(18 + pulse * 42);
+        
+        return new Raylib_cs.Color((byte)255, (byte)165, (byte)0, alpha);
+    }
+
+    private static void Handle2DEditing(ref (int part, int vertex) hoveredVertex, ref (int part, int start, int end, Vector2 point) hoveredLine, ref int hoveredPart, ref Vector2? previewVertex) {
+
+        if (Gui.WantCaptureMouse) return;
+
+        if (_selectedVertex != (-1, -1) || _selectedLine.HasValue || _selectedPart.HasValue) return;
+
+        if (_rectStart.HasValue) {
+
+            if (Input.IsButtonReleased(MouseLeft))
+                FinishRectCreate();
+
+            return;
+        }
+
+        var hasLinePoint = hoveredLine.part != -1;
+        var canInsertVertex = Input.IsButtonDown(KeyBoardLeftShift) && hasLinePoint;
+
+        if (canInsertVertex) previewVertex = hoveredLine.point;
+
+        if (Input.IsButtonDown(MouseRight) && hoveredVertex != (-1, -1)) {
+
+            if (_activePart == hoveredVertex.part && Map.Parts[hoveredVertex.part].Vertices.Count <= 3)
+                _activePart = -1;
+
+            Map.DeleteVertex(hoveredVertex);
+            hoveredVertex = (-1, -1);
+            return;
+        }
+
+        if (!Input.IsButtonPressed(MouseLeft)) return;
+
+        if (hoveredVertex != (-1, -1)) {
+            
+            SelectOrInsertVertex(hoveredVertex);
+            return;
+        }
+
+        if (hoveredPart != -1 && !Input.IsButtonDown(KeyBoardLeftShift)) {
+            
+            TrySelectPart(hoveredPart);
+            return;
+        }
+
+        if (canInsertVertex) {
+            
+            SelectOrInsertVertex((-1, -1));
+            return;
+        }
+
+        if (hoveredLine.part != -1 && TrySelectLine(hoveredLine)) return;
+
+        _rectStart = Snap(Input.MouseWorldPos);
+        _rectParentPart = hoveredPart;
+    }
+
+    private static bool TrySelectLine((int part, int start, int end, Vector2 point) hoveredLine) {
+
+        var vertices = Map.Parts[hoveredLine.part].Vertices;
+        var mouseStart = Snap(Input.MouseWorldPos);
+
+        _selectedLine = (
+            
+            (hoveredLine.part, hoveredLine.start, hoveredLine.end),
+            mouseStart,
+            vertices[hoveredLine.start],
+            vertices[hoveredLine.end]
+        );
+        
+        _activePart = hoveredLine.part;
+
+        return true;
+    }
+
+    private static void TrySelectPart(int hoveredPart) {
+
+        _activePart = hoveredPart;
+        
+        _selectedPart = (
+            
+            hoveredPart,
+            Snap(Input.MouseWorldPos),
+            Map.Parts[hoveredPart].Vertices.Select(vertex => vertex).ToList()
+        );
+    }
+
+    private static float GetVertexSelectDistance() => VertexSelectPixels / Render.Cam2D.Zoom;
+
+    private static float GetLineSelectDistance() => LineSelectPixels / Render.Cam2D.Zoom;
+
+    private static void FinishRectCreate() {
+
+        if (!_rectStart.HasValue) return;
+
+        var start = _rectStart.Value;
+        var end = Snap(Input.MouseWorldPos);
+
+        _rectStart = null;
+        var hoveredPart = _rectParentPart;
+        _rectParentPart = -1;
+
+        var min = Vector2.Min(start, end);
+        var max = Vector2.Max(start, end);
+
+        if (max.X - min.X <= float.Epsilon || max.Y - min.Y <= float.Epsilon) return;
+
+        var part = new Part();
+
+        part.Vertices.Add(new Vector2(min.X, min.Y));
+        part.Vertices.Add(new Vector2(min.X, max.Y));
+        part.Vertices.Add(new Vector2(max.X, max.Y));
+        part.Vertices.Add(new Vector2(max.X, min.Y));
+
+        if (hoveredPart != -1 && !part.Vertices.All(vertex => Util.IsPointInPolygon(vertex, Map.Parts[hoveredPart].Vertices)))
+            return;
+        
+        Map.Parts.Add(part);
+        
+        _activePart = Map.Parts.Count - 1;
+    }
+
+    private static void DrawRectPreview() {
+
+        if (!_rectStart.HasValue) return;
+
+        var start = _rectStart.Value;
+        var end = Snap(Input.MouseWorldPos);
+        var min = Vector2.Min(start, end);
+        var max = Vector2.Max(start, end);
+
+        var vertices = new List<Vector2> {
+            
+            new(min.X, min.Y),
+            new(min.X, max.Y),
+            new(max.X, max.Y),
+            new(max.X, min.Y)
+        };
+
+        Render.Shape(vertices, Colors.Part, Colors.PartFail);
+
+        for (var i = 0; i < vertices.Count; i++)
+            DrawEdge(vertices, i);
+    }
+
+    private static void DrawEdge(List<Vector2> vertices, int index, bool hovered = false) {
         
         if (vertices.Count < 2) return;
 
         var next = index + 1;
+        var color = hovered ? Colors.Orange : Colors.Gray;
 
         if (next < vertices.Count) {
             
-            Render.Line(vertices[index], vertices[next], Colors.Gray);
+            Render.Line(vertices[index], vertices[next], color);
             return;
         }
 
-        if (vertices.Count > 2) Render.Line(vertices[index], vertices[0], Colors.Gray);
+        if (vertices.Count > 2) Render.Line(vertices[index], vertices[0], color);
+    }
+
+    private static void DrawPartInspector() {
+
+        Gui.SetNextWindow(Vector2.Zero, new Vector2(340, Window.Height));
+
+        if (!Gui.Begin("Part")) {
+            
+            Gui.End();
+            return;
+        }
+
+        Gui.Text(_mode3D ? "Mode: 3D" : "Mode: 2D");
+
+        if (_activePart < 0 || _activePart >= Map.Parts.Count) {
+            
+            Gui.Separator();
+            Gui.Text("No part selected.");
+            Gui.End();
+            
+            return;
+        }
+
+        var part = Map.Parts[_activePart];
+
+        Gui.Separator();
+        Gui.Text($"Selected Part: {_activePart}");
+
+        var height = part.Height;
+        
+        if (Gui.DragFloat("Height", ref height, 0.1f, 1000f))
+            part.Height = height;
+
+        var yOffset = part.YOffset;
+        
+        if (Gui.DragFloat("YOffset", ref yOffset, -1000f, 1000f))
+            part.YOffset = yOffset;
+
+        DrawSurfaceEditor("Floor", part.Floor);
+        DrawSurfaceEditor("Wall", part.Wall);
+        DrawSurfaceEditor("Ceil", part.Ceil);
+
+        Gui.End();
+    }
+
+    private static void DrawSurfaceEditor(string label, Surface surface) {
+
+        if (!Gui.CollapsingHeader(label)) return;
+
+        DrawTextureField($"{label} Texture", surface);
+
+        var mode = (int)surface.Mode;
+        var modeNames = Enum.GetNames<TileMode>();
+        
+        if (Gui.Combo($"{label} Mode", modeNames, ref mode))
+            surface.Mode = (TileMode)mode;
+
+        var wrap = (int)surface.Wrap;
+        var wrapNames = Enum.GetNames<Raylib_cs.TextureWrap>();
+        
+        if (Gui.Combo($"{label} Wrap", wrapNames, ref wrap))
+            surface.Wrap = (Raylib_cs.TextureWrap)wrap;
+
+        var tiling = surface.Tiling;
+        
+        if (Gui.DragVector2($"{label} Tiling", ref tiling, 0.01f, 1000f))
+            surface.Tiling = tiling;
+
+        var offset = surface.Offset;
+        
+        if (Gui.DragVector2($"{label} Offset", ref offset))
+            surface.Offset = offset;
+    }
+
+    private static void DrawTextureField(string label, Surface surface) {
+
+        var texture = surface.Texture;
+        
+        if (Gui.InputText(label, ref texture, 256))
+            surface.Texture = texture;
+
+        if (TextureFiles.Length == 0)
+            return;
+
+        var currentIndex = Array.IndexOf(TextureFiles, surface.Texture);
+        
+        if (currentIndex < 0)
+            currentIndex = 0;
+
+        if (Gui.Combo($"{label} Presets", TextureFiles, ref currentIndex))
+            surface.Texture = TextureFiles[currentIndex];
     }
 }
