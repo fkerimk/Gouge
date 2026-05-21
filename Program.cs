@@ -116,8 +116,8 @@ internal static partial class Program {
 
         return new Vector2 (
             
-            MathF.Round(position.X * snap) / snap,
-            MathF.Round(position.Y * snap) / snap
+            MathF.Round(position.X * snap, MidpointRounding.AwayFromZero) / snap,
+            MathF.Round(position.Y * snap, MidpointRounding.AwayFromZero) / snap
         );
     }
     

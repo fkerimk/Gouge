@@ -4,11 +4,11 @@ using static Sickle.Heart.Core.Button;
 
 internal static partial class Program {
     
-    private const float Camera3DHeight = 2.5f;
     private const float Camera3DMoveSpeed = 6f;
     private const float Camera3DMouseSensitivity = 0.0035f;
     private const float Camera3DPitchLimit = 1.35f;
     
+    private static float _camera3DHeight = 2.5f;
     private static float _camera3DYaw = -MathF.PI * 0.5f;
     private static float _camera3DPitch = -0.35f;
 
@@ -46,10 +46,13 @@ internal static partial class Program {
         if (Input.IsButtonDown(KeyBoardA)) move -= right2D;
         if (Input.IsButtonDown(KeyBoardD)) move += right2D;
 
+        if (Input.IsButtonDown(KeyBoardQ)) _camera3DHeight -= Camera3DMoveSpeed * Time.Delta;
+        if (Input.IsButtonDown(KeyBoardE)) _camera3DHeight += Camera3DMoveSpeed * Time.Delta;
+
         if (move != Vector2.Zero)
             Render.Cam2D.Target += Vector2.Normalize(move) * Camera3DMoveSpeed * Time.Delta;
 
-        Render.Cam3D.Position = new Vector3(Render.Cam2D.Target.X, Camera3DHeight, Render.Cam2D.Target.Y);
+        Render.Cam3D.Position = new Vector3(Render.Cam2D.Target.X, _camera3DHeight, Render.Cam2D.Target.Y);
         Render.Cam3D.Target = Render.Cam3D.Position + forward;
         Render.Cam3D.Up = Vector3.UnitY;
     }
