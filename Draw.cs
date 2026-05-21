@@ -54,6 +54,12 @@ internal static partial class Program {
         Render.Begin3D();
             
         Render.Map(Map);
+
+        if (_hoveredPart3D != -1 && _hoveredPart3D < Map.Parts.Count && _hoveredPart3D != _activePart)
+            Render.PartOutline(Map.Parts[_hoveredPart3D], Colors.Gold);
+
+        if (_activePart != -1 && _activePart < Map.Parts.Count)
+            Render.PartOutline(Map.Parts[_activePart], Colors.Orange);
             
         Render.End3D();
     }

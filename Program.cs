@@ -16,6 +16,7 @@ internal static partial class Program {
     private const float LineSelectPixels = 8f;
     
     private static int _activePart = -1;
+    private static int _hoveredPart3D = -1;
     private static (int part, Vector2 mouseStart, List<Vector2> vertices)? _selectedPart;
     private static ((int part, int start, int end) edge, Vector2 mouseStart, Vector2 startVertex, Vector2 endVertex)? _selectedLine;
     private static (int part, int vertex) _selectedVertex = (-1, -1);
@@ -35,7 +36,9 @@ internal static partial class Program {
             if (Input.IsButtonPressed(KeyBoardSpace))
                 _mode3D = !_mode3D;
             
-            if (!_mode3D) {
+            if (_mode3D)
+                Handle3DSelection();
+            else {
                 
                 MoveSelectedVertex();
                 MoveSelectedLine();
