@@ -10,6 +10,7 @@ internal static partial class Gouge {
 
     private static readonly Map Map = new();
     private static readonly string[] TextureFiles = Resources.GetResourceFiles("texture");
+    private static readonly List<Map> History = [];
     
     private static bool _mode3D;
     
@@ -33,6 +34,8 @@ internal static partial class Gouge {
     private static (int part, Vector2 screenStart)? _pendingPart3D;
 
     private const float DragSpeed = .05f;
+    private const int HistoryCapacity = 300;
+    private static int _historyIndex = -1;
     
     public static unsafe void Main() {
         
@@ -51,11 +54,14 @@ internal static partial class Gouge {
         ReloadFonts();
         
         CreateDefaultPart();
+        RecordHistorySnapshot();
         
         while (!WindowShouldClose()) {
 
             if (IsKeyPressed(KeyboardKey.Space))
                 _mode3D = !_mode3D;
+
+            HandleHistoryShortcuts();
 
             if (_mode3D) {
                 if (!TryUpdateMouseWorldPos3D())
@@ -169,6 +175,87 @@ internal static partial class Gouge {
         _activePart = 0;
     }
 
+    private static void HandleHistoryShortcuts() {
+
+        if (_io.WantTextInput)
+            return;
+
+        var ctrl = IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl);
+
+        if (!ctrl)
+            return;
+
+        var shift = IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift);
+
+        if (shift && IsHistoryShortcutPressed(KeyboardKey.Z) || IsHistoryShortcutPressed(KeyboardKey.Y)) {
+            RedoHistory();
+            return;
+        }
+
+        if (IsHistoryShortcutPressed(KeyboardKey.Z))
+            UndoHistory();
+    }
+
+    private static bool IsHistoryShortcutPressed(KeyboardKey key) =>
+        IsKeyPressed(key) || IsKeyPressedRepeat(key);
+
+    private static void RecordHistorySnapshot() {
+
+        var snapshot = Map.Clone();
+
+        if (_historyIndex >= 0 && History[_historyIndex].ContentEquals(snapshot))
+            return;
+
+        if (_historyIndex < History.Count - 1)
+            History.RemoveRange(_historyIndex + 1, History.Count - _historyIndex - 1);
+
+        History.Add(snapshot);
+
+        if (History.Count > HistoryCapacity)
+            History.RemoveAt(0);
+
+        _historyIndex = History.Count - 1;
+    }
+
+    private static void UndoHistory() {
+
+        if (_historyIndex <= 0)
+            return;
+
+        _historyIndex--;
+        ApplyHistorySnapshot(History[_historyIndex]);
+    }
+
+    private static void RedoHistory() {
+
+        if (_historyIndex >= History.Count - 1)
+            return;
+
+        _historyIndex++;
+        ApplyHistorySnapshot(History[_historyIndex]);
+    }
+
+    private static void ApplyHistorySnapshot(Map snapshot) {
+        Map.CopyFrom(snapshot);
+        ClearActiveEditState();
+
+        if (Map.Parts.Count == 0)
+            _activePart = -1;
+        else if (_activePart >= Map.Parts.Count)
+            _activePart = Map.Parts.Count - 1;
+    }
+
+    private static void ClearActiveEditState() {
+        _selectedPart = null;
+        _selectedLine = null;
+        _selectedVertex = (-1, -1);
+        _rectStart = null;
+        _rectParentPart = -1;
+        _pendingVertex3D = null;
+        _pendingLine3D = null;
+        _pendingPart3D = null;
+    }
+
     private static void MoveSelectedVertex() {
         
         if (_selectedVertex == (-1, -1)) return;
@@ -182,6 +269,7 @@ internal static partial class Gouge {
         TryMergeVertex(snappedPos);
         
         _selectedVertex = (-1, -1);
+        RecordHistorySnapshot();
     }
 
     private static void MoveSelectedLine() {
@@ -198,6 +286,7 @@ internal static partial class Gouge {
         if (!IsMouseButtonUp(MouseButton.Left)) return;
 
         _selectedLine = null;
+        RecordHistorySnapshot();
     }
 
     private static void MoveSelectedPart() {
@@ -214,6 +303,7 @@ internal static partial class Gouge {
         if (!IsMouseButtonUp(MouseButton.Left)) return;
 
         _selectedPart = null;
+        RecordHistorySnapshot();
     }
 
     private static Vector2 Snap(Vector2 position) {
@@ -253,6 +343,8 @@ internal static partial class Gouge {
         if (IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift))
             part.YOffset += delta;
         else part.Height = MathF.Max(0.25f, part.Height + delta);
+
+        RecordHistorySnapshot();
     }
 
     private static void DrawGrid() {

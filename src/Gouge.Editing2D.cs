@@ -134,6 +134,7 @@ internal static partial class Gouge {
                 _activePart = -1;
 
             Map.DeleteVertex(hoveredVertex);
+            RecordHistorySnapshot();
             hoveredVertex = (-1, -1);
             return;
         }
@@ -255,6 +256,7 @@ internal static partial class Gouge {
 
         Map.Parts.Add(part);
         _activePart = Map.Parts.Count - 1;
+        RecordHistorySnapshot();
     }
 
     private static void DrawRectPreview() {

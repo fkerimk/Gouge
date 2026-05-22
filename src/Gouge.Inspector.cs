@@ -32,10 +32,12 @@ internal static partial class Gouge {
         var height = part.Height;
         if (ImGui.DragFloat("Height", ref height, DragSpeed, 0.1f, 1000f))
             part.Height = height;
+        CommitHistoryOnImGuiEditEnd();
 
         var yOffset = part.YOffset;
         if (ImGui.DragFloat("YOffset", ref yOffset, DragSpeed, -1000f, 1000f))
             part.YOffset = yOffset;
+        CommitHistoryOnImGuiEditEnd();
 
         DrawSurfaceEditor("Floor", part.Floor);
         DrawSurfaceEditor("Wall", part.Wall);
@@ -55,19 +57,23 @@ internal static partial class Gouge {
         var modeNames = Enum.GetNames<TileMode>();
         if (ImGui.Combo($"{label} Mode", ref mode, modeNames, modeNames.Length))
             surface.Mode = (TileMode)mode;
+        CommitHistoryOnImGuiChange();
 
         var wrap = (int)surface.Wrap;
         var wrapNames = Enum.GetNames<TextureWrap>();
         if (ImGui.Combo($"{label} Wrap", ref wrap, wrapNames, wrapNames.Length))
             surface.Wrap = (TextureWrap)wrap;
+        CommitHistoryOnImGuiChange();
 
         var tiling = surface.Tiling;
         if (ImGui.DragFloat2($"{label} Tiling", ref tiling, DragSpeed, 0.01f, 1000f))
             surface.Tiling = tiling;
+        CommitHistoryOnImGuiEditEnd();
 
         var offset = surface.Offset;
         if (ImGui.DragFloat2($"{label} Offset", ref offset, DragSpeed))
             surface.Offset = offset;
+        CommitHistoryOnImGuiEditEnd();
     }
 
     private static void DrawTextureField(string label, Surface surface) {
@@ -75,6 +81,7 @@ internal static partial class Gouge {
         var texture = surface.Texture;
         if (ImGui.InputText(label, ref texture, 256))
             surface.Texture = texture;
+        CommitHistoryOnImGuiEditEnd();
 
         if (TextureFiles.Length == 0)
             return;
@@ -85,5 +92,18 @@ internal static partial class Gouge {
 
         if (ImGui.Combo($"{label} Presets", ref currentIndex, TextureFiles, TextureFiles.Length))
             surface.Texture = TextureFiles[currentIndex];
+        CommitHistoryOnImGuiChange();
+    }
+
+    private static void CommitHistoryOnImGuiEditEnd() {
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            RecordHistorySnapshot();
+    }
+
+    private static void CommitHistoryOnImGuiChange() {
+
+        if (ImGui.IsItemEdited())
+            RecordHistorySnapshot();
     }
 }
