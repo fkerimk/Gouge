@@ -23,9 +23,12 @@ internal static partial class Gouge {
     private static bool _selectedLineExtrudePending;
     private static (int part, int vertex) _selectedVertex = (-1, -1);
     private static bool _selectedVertexExtrudePending;
+    private static readonly HashSet<(int part, int vertex)> SelectedVertices = [];
+    private static List<((int part, int vertex) vertex, Vector2 start)>? _selectedVertexDragGroup;
     
     private static Vector2? _rectStart;
     private static int _rectParentPart = -1;
+    private static Vector2? _selectionRectStartScreen;
 
     private static ImGuiIOPtr _io;
     private static Vector2 _mouseWorldPos;
@@ -160,6 +163,8 @@ internal static partial class Gouge {
                 EndMode2D();
             }
 
+            DrawSelectionRectOverlay();
+
             Begin();
         
             DrawPartInspector();
@@ -205,10 +210,18 @@ internal static partial class Gouge {
 
     private static void HandleActivePartKeyboardEdit() {
 
-        if (_io.WantCaptureKeyboard || _activePart < 0 || _activePart >= Map.Parts.Count)
+        if (_io.WantCaptureKeyboard)
             return;
 
         if (_selectedVertex != (-1, -1) || _selectedLine.HasValue || _selectedPart.HasValue || _rectStart.HasValue || HasPending3DDrag())
+            return;
+
+        if (SelectedVertices.Count > 0) {
+            HandleSelectedVerticesKeyboardEdit();
+            return;
+        }
+
+        if (_activePart < 0 || _activePart >= Map.Parts.Count)
             return;
 
         if (IsKeyPressed(KeyboardKey.Delete)) {
@@ -222,6 +235,22 @@ internal static partial class Gouge {
         var moved = shift
             ? (_mode3D ? TryEditActivePartVertices3D(step, ctrl) : TryEditActivePartVertices2D(step, ctrl))
             : (_mode3D ? TryMoveActivePart3D(step) : TryMoveActivePart2D(step));
+
+        if (moved)
+            RecordHistorySnapshot();
+    }
+
+    private static void HandleSelectedVerticesKeyboardEdit() {
+
+        if (IsKeyPressed(KeyboardKey.Delete)) {
+            DeleteSelectedVertices();
+            return;
+        }
+
+        var step = IsKeyDown(KeyboardKey.LeftAlt) || IsKeyDown(KeyboardKey.RightAlt) ? 0.1f : 1f;
+        var moved = _mode3D
+            ? TryMoveSelectedVertices3D(step)
+            : TryMoveSelectedVertices2D(step);
 
         if (moved)
             RecordHistorySnapshot();
@@ -246,6 +275,25 @@ internal static partial class Gouge {
         return true;
     }
 
+    private static bool TryMoveSelectedVertices2D(float step) {
+
+        var keyMove = GetArrowKeyDirection();
+
+        if (keyMove == Vector2.Zero)
+            return false;
+
+        var pivot = GetSelectedVerticesCenter2D();
+        var right = GetScreenAlignedAxis2D(pivot, new Vector2(1f, 0f));
+        var up = GetScreenAlignedAxis2D(pivot, new Vector2(0f, -1f));
+        var planarMove = right * keyMove.X + up * keyMove.Y;
+
+        if (planarMove == Vector2.Zero)
+            return false;
+
+        TranslateSelectedVertices(planarMove * step);
+        return true;
+    }
+
     private static bool TryMoveActivePart3D(float step) {
 
         var keyMove = GetArrowKeyDirection();
@@ -262,6 +310,24 @@ internal static partial class Gouge {
             return false;
 
         TranslatePart(_activePart, new Vector2(worldMove.X, worldMove.Z) * step, worldMove.Y * step);
+        return true;
+    }
+
+    private static bool TryMoveSelectedVertices3D(float step) {
+
+        var keyMove = GetArrowKeyDirection();
+
+        if (keyMove == Vector2.Zero)
+            return false;
+
+        var forward = GetSnappedPlanarForwardAxis3D();
+        var right = GetSnappedPlanarRightAxis3D(forward);
+        var direction = right * keyMove.X + forward * keyMove.Y;
+
+        if (direction == Vector2.Zero)
+            return false;
+
+        TranslateSelectedVertices(Vector2.Normalize(direction) * step);
         return true;
     }
 
@@ -313,6 +379,16 @@ internal static partial class Gouge {
             sum += vertex;
 
         return sum / part.Vertices.Count;
+    }
+
+    private static Vector2 GetSelectedVerticesCenter2D() {
+
+        var sum = Vector2.Zero;
+
+        foreach (var (part, vertex) in SelectedVertices)
+            sum += Map.Parts[part].Vertices[vertex];
+
+        return sum / SelectedVertices.Count;
     }
 
     private static Vector2 GetSnappedPlanarForwardAxis3D() {
@@ -529,6 +605,12 @@ internal static partial class Gouge {
         part.YOffset += yDelta;
     }
 
+    private static void TranslateSelectedVertices(Vector2 delta) {
+
+        foreach (var (part, vertex) in SelectedVertices)
+            Map.Parts[part].Vertices[vertex] += delta;
+    }
+
     private static void DeleteActivePart() {
 
         Map.Parts.RemoveAt(_activePart);
@@ -542,13 +624,127 @@ internal static partial class Gouge {
         RecordHistorySnapshot();
     }
 
+    private static void DeleteSelectedVertices() {
+
+        var removedActivePart = false;
+        var removedBeforeActivePart = 0;
+
+        foreach (var group in SelectedVertices.GroupBy(selection => selection.part).OrderByDescending(group => group.Key)) {
+            var partIndex = group.Key;
+
+            if (partIndex < 0 || partIndex >= Map.Parts.Count)
+                continue;
+
+            var part = Map.Parts[partIndex];
+            var indices = group.Select(selection => selection.vertex).Distinct().OrderByDescending(index => index).ToArray();
+
+            if (part.Vertices.Count - indices.Length < 3) {
+                Map.Parts.RemoveAt(partIndex);
+                removedActivePart |= _activePart == partIndex;
+                if (partIndex < _activePart)
+                    removedBeforeActivePart++;
+                continue;
+            }
+
+            foreach (var index in indices)
+                part.Vertices.RemoveAt(index);
+        }
+
+        SelectedVertices.Clear();
+        _selectedVertex = (-1, -1);
+        _selectedVertexDragGroup = null;
+
+        if (Map.Parts.Count == 0)
+            _activePart = -1;
+        else if (removedActivePart)
+            _activePart = Math.Clamp(_activePart - removedBeforeActivePart, 0, Map.Parts.Count - 1);
+        else if (_activePart >= Map.Parts.Count)
+            _activePart = Math.Clamp(_activePart, 0, Map.Parts.Count - 1);
+        else _activePart = Math.Clamp(_activePart - removedBeforeActivePart, 0, Map.Parts.Count - 1);
+
+        RecordHistorySnapshot();
+    }
+
+    private static void StartVertexSelectionRect() =>
+        _selectionRectStartScreen = GetMousePosition();
+
+    private static bool HasSelectionRect() => _selectionRectStartScreen.HasValue;
+
+    private static void FinishVertexSelectionRect() {
+
+        if (!_selectionRectStartScreen.HasValue)
+            return;
+
+        var rect = GetSelectionRectScreen();
+        _selectionRectStartScreen = null;
+        SelectedVertices.Clear();
+
+        if (rect.Width <= float.Epsilon || rect.Height <= float.Epsilon)
+            return;
+
+        for (var i = 0; i < Map.Parts.Count; i++) {
+            var part = Map.Parts[i];
+
+            for (var j = 0; j < part.Vertices.Count; j++) {
+                var screen = GetVertexScreenPosition(i, j);
+
+                if (CheckCollisionPointRec(screen, rect))
+                    SelectedVertices.Add((i, j));
+            }
+        }
+    }
+
+    private static Rectangle GetSelectionRectScreen() {
+
+        var start = _selectionRectStartScreen ?? GetMousePosition();
+        var end = GetMousePosition();
+        var min = Vector2.Min(start, end);
+        var max = Vector2.Max(start, end);
+        return new Rectangle(min.X, min.Y, max.X - min.X, max.Y - min.Y);
+    }
+
+    private static Vector2 GetVertexScreenPosition(int partIndex, int vertexIndex) {
+
+        var part = Map.Parts[partIndex];
+        var vertex = part.Vertices[vertexIndex];
+
+        return _mode3D
+            ? GetWorldToScreen(new Vector3(vertex.X, part.YOffset, vertex.Y), Render.Cam3D)
+            : GetWorldToScreen2D(vertex, Render.Cam2D);
+    }
+
+    private static void DrawSelectionRectOverlay() {
+
+        if (!_selectionRectStartScreen.HasValue)
+            return;
+
+        var rect = GetSelectionRectScreen();
+        DrawRectangleRec(rect, new Color(255, 165, 0, 28));
+        DrawRectangleLinesEx(rect, 1f, Colors.Orange);
+    }
+
     private static void BeginVertexDrag((int part, int vertex) vertex, bool extrude) {
+        if (SelectedVertices.Contains(vertex)) {
+            _selectedVertexDragGroup = SelectedVertices
+                .OrderBy(selection => selection.part)
+                .ThenBy(selection => selection.vertex)
+                .Select(selection => (selection, Map.Parts[selection.part].Vertices[selection.vertex]))
+                .ToList();
+            _selectedVertexExtrudePending = false;
+        }
+        else {
+            _selectedVertexDragGroup = null;
+            SelectedVertices.Clear();
+            _selectedVertexExtrudePending = extrude;
+        }
+
         _selectedVertex = vertex;
-        _selectedVertexExtrudePending = extrude;
         _activePart = vertex.part;
     }
 
     private static void BeginLineDrag(int part, int start, int end, Vector2 mouseStart, Vector2 startVertex, Vector2 endVertex, bool extrude) {
+        _selectedVertexDragGroup = null;
+        SelectedVertices.Clear();
         _selectedLine = (
             (part, start, end),
             mouseStart,
@@ -667,8 +863,11 @@ internal static partial class Gouge {
         _selectedLineExtrudePending = false;
         _selectedVertex = (-1, -1);
         _selectedVertexExtrudePending = false;
+        _selectedVertexDragGroup = null;
+        SelectedVertices.Clear();
         _rectStart = null;
         _rectParentPart = -1;
+        _selectionRectStartScreen = null;
         _pendingVertex3D = null;
         _pendingLine3D = null;
         _pendingPart3D = null;
@@ -680,17 +879,28 @@ internal static partial class Gouge {
 
         var snappedPos = Snap(_mouseWorldPos);
 
-        if (_selectedVertexExtrudePending && snappedPos != Map.Parts[_selectedVertex.part].Vertices[_selectedVertex.vertex])
-            ExtrudeSelectedVertex();
+        if (_selectedVertexDragGroup is { Count: > 0 }) {
+            var anchor = _selectedVertexDragGroup.First(entry => entry.vertex == _selectedVertex).start;
+            var delta = snappedPos - anchor;
 
-        Map.Parts[_selectedVertex.part].Vertices[_selectedVertex.vertex] = snappedPos;
+            foreach (var entry in _selectedVertexDragGroup)
+                Map.Parts[entry.vertex.part].Vertices[entry.vertex.vertex] = entry.start + delta;
+        }
+        else {
+            if (_selectedVertexExtrudePending && snappedPos != Map.Parts[_selectedVertex.part].Vertices[_selectedVertex.vertex])
+                ExtrudeSelectedVertex();
+
+            Map.Parts[_selectedVertex.part].Vertices[_selectedVertex.vertex] = snappedPos;
+        }
 
         if (!IsMouseButtonUp(MouseButton.Left)) return;
 
-        TryMergeVertex(snappedPos);
+        if (_selectedVertexDragGroup is null)
+            TryMergeVertex(snappedPos);
         
         _selectedVertex = (-1, -1);
         _selectedVertexExtrudePending = false;
+        _selectedVertexDragGroup = null;
         RecordHistorySnapshot();
     }
 

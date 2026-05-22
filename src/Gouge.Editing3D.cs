@@ -540,6 +540,8 @@ internal static partial class Gouge {
 
     private static void DrawPlanOverlay3D(float planeY, (int part, int vertex) hoveredVertex, (int part, int start, int end, Vector2 point) hoveredLine, int hoveredPart) {
 
+        var hoveredSelectedVertex = hoveredVertex != (-1, -1) && SelectedVertices.Contains(hoveredVertex);
+
         foreach (var i in GetPlanePartOrder3D(planeY).Reverse()) {
             var part = Map.Parts[i];
             var vertices = part.Vertices;
@@ -568,10 +570,13 @@ internal static partial class Gouge {
                     DrawHoveredLineMarker3D(vertex, vertices[next], part.YOffset);
 
                 var isHoveredVertex = hoveredVertex == (i, j);
-                var isSelectedVertex = _selectedVertex == (i, j);
+                var isSelectedVertex = _selectedVertex == (i, j) || SelectedVertices.Contains((i, j));
+                var highlightSelectedGroup = hoveredSelectedVertex && SelectedVertices.Contains((i, j));
                 var isSelectedPartVertex = i == _activePart;
-                var color = isSelectedVertex
-                    ? Colors.Ivory
+                var color = highlightSelectedGroup
+                    ? Colors.White
+                    : isSelectedVertex
+                        ? Colors.Ivory
                     : isHoveredVertex
                         ? Colors.Orange
                         : isSelectedPartVertex
@@ -579,7 +584,9 @@ internal static partial class Gouge {
                             : defaultEdgeColor;
 
                 var size = isSelectedVertex || isHoveredVertex
-                    ? OverlayHandleSize3D
+                    ? highlightSelectedGroup
+                        ? OverlayHandleSize3D * 1.1f
+                        : OverlayHandleSize3D
                     : HandleSize3D;
 
                 DrawCubeV(new Vector3(vertex.X, y, vertex.Y), new Vector3(size), color);

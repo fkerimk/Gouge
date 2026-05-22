@@ -73,6 +73,8 @@ internal static partial class Gouge {
 
     private static void DrawParts((int part, int vertex) hoveredVertex, (int part, int start, int end, Vector2 point) hoveredLine, int hoveredPart) {
 
+        var hoveredSelectedVertex = hoveredVertex != (-1, -1) && SelectedVertices.Contains(hoveredVertex);
+
         for (var i = 0; i < Map.Parts.Count; i++) {
 
             var part = Map.Parts[i];
@@ -86,11 +88,21 @@ internal static partial class Gouge {
 
                 DrawEdge(vertices, j, hoveredLine.part == i && hoveredLine.start == j && hoveredLine.end == Geometry2D.GetNextLoopIndex(j, vertices.Count));
 
-                var color = _selectedVertex == (i, j) || hoveredVertex == (i, j)
-                    ? Colors.Orange
-                    : Colors.White;
+                var isSelectedVertex = _selectedVertex == (i, j) || SelectedVertices.Contains((i, j));
+                var isHoveredVertex = hoveredVertex == (i, j);
+                var highlightSelectedGroup = hoveredSelectedVertex && SelectedVertices.Contains((i, j));
+                var color = highlightSelectedGroup
+                    ? Colors.Ivory
+                    : isSelectedVertex || isHoveredVertex
+                        ? Colors.Orange
+                        : Colors.White;
+                var size = highlightSelectedGroup
+                    ? 0.15f
+                    : isSelectedVertex || isHoveredVertex
+                        ? 0.12f
+                        : 0.1f;
 
-                Render.Square(color, vertex, .1f);
+                Render.Square(color, vertex, size);
             }
         }
     }
@@ -110,6 +122,13 @@ internal static partial class Gouge {
 
         if (_io.WantCaptureMouse || _selectedVertex != (-1, -1) || _selectedLine.HasValue || _selectedPart.HasValue || HasPending3DDrag())
             return;
+
+        if (HasSelectionRect()) {
+            if (IsMouseButtonReleased(MouseButton.Left))
+                FinishVertexSelectionRect();
+
+            return;
+        }
 
         if (_rectStart.HasValue) {
 
@@ -138,6 +157,11 @@ internal static partial class Gouge {
 
         if (!IsMouseButtonPressed(MouseButton.Left))
             return;
+
+        if (IsCtrlDown() && hoveredVertex == (-1, -1) && hoveredLine.part == -1) {
+            StartVertexSelectionRect();
+            return;
+        }
 
         if (hoveredVertex != (-1, -1)) {
             if (_mode3D) QueueVertexDrag3D(hoveredVertex);
@@ -185,6 +209,8 @@ internal static partial class Gouge {
     }
 
     private static void TrySelectPart(int hoveredPart) {
+
+        SelectedVertices.Clear();
 
         if (_mode3D) {
             QueuePartDrag3D(hoveredPart);
