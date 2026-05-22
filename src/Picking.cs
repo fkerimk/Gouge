@@ -6,12 +6,6 @@ internal static class Picking {
 
     private const float DistanceTieEpsilon = 0.0001f;
 
-    public static bool TryRaycastPart(Map map, Ray ray, out int partIndex, out float distance) {
-
-        var hit = TryRaycastPart(map, ray, out partIndex, out _, out distance);
-        return hit;
-    }
-
     public static bool TryRaycastPart(Map map, Ray ray, out int partIndex, out Vector3 hitPoint, out float distance) {
 
         partIndex = -1;

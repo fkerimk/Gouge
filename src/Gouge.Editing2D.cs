@@ -206,16 +206,16 @@ internal static partial class Gouge {
 
     private static IEnumerable<int> GetPartPickOrder2D(int preferredPart) {
 
-        if (preferredPart != -1) {
-            yield return preferredPart;
-            yield break;
-        }
+        var yielded = new HashSet<int>();
 
-        if (_activePart != -1 && _activePart < Map.Parts.Count)
+        if (preferredPart != -1 && preferredPart < Map.Parts.Count && yielded.Add(preferredPart))
+            yield return preferredPart;
+
+        if (_activePart != -1 && _activePart < Map.Parts.Count && yielded.Add(_activePart))
             yield return _activePart;
 
         for (var i = 0; i < Map.Parts.Count; i++) {
-            if (i != _activePart)
+            if (yielded.Add(i))
                 yield return i;
         }
     }

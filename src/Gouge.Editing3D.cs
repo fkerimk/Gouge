@@ -30,11 +30,6 @@ internal static partial class Gouge {
             : (-1, float.PositiveInfinity);
     }
 
-    private static int FindHoveredPart3D() => FindHoveredPartHit3D().part;
-
-    private static (int part, int vertex) FindHoveredVertex3D(int preferredPart = -1, float maxRayDistance = float.PositiveInfinity) =>
-        FindHoveredVertexCandidate3D(preferredPart, maxRayDistance)?.Hovered ?? (-1, -1);
-
     private static VertexHover3D? FindHoveredVertexCandidate3D(int preferredPart = -1, float maxRayDistance = float.PositiveInfinity) {
 
         var bestDistance = VertexSelectPixels3D;
@@ -69,9 +64,6 @@ internal static partial class Gouge {
 
         return hovered == (-1, -1) ? null : new VertexHover3D(hovered, bestScore);
     }
-
-    private static (int part, int start, int end, Vector2 point) FindHoveredLine3D(int preferredPart = -1, float maxRayDistance = float.PositiveInfinity) =>
-        FindHoveredLineCandidate3D(preferredPart, maxRayDistance)?.Hovered ?? (part: -1, start: -1, end: -1, point: Vector2.Zero);
 
     private static LineHover3D? FindHoveredLineCandidate3D(int preferredPart = -1, float maxRayDistance = float.PositiveInfinity) {
 
@@ -154,15 +146,12 @@ internal static partial class Gouge {
         if (_selectedPart.HasValue)
             return TryGetMouseWorldPosOnPlane3D(Map.Parts[_selectedPart.Value.part].YOffset, ray, out _mouseWorldPos);
 
-        if (_rectStart.HasValue)
+        if (_rectStart.HasValue || !TryGetHoverPlaneContext3D(out _, out var planePoint))
             return TryGetMouseWorldPosOnPlane3D(GetEditPlaneY(), ray, out _mouseWorldPos);
 
-        if (TryGetHoverPlaneContext3D(out var planeY, out var planePoint)) {
-            _mouseWorldPos = planePoint;
-            return true;
-        }
+        _mouseWorldPos = planePoint;
+        return true;
 
-        return TryGetMouseWorldPosOnPlane3D(GetEditPlaneY(), ray, out _mouseWorldPos);
     }
 
     private static bool TryGetMouseWorldPosOnPlane3D(float y, Ray ray, out Vector2 point) {
@@ -304,10 +293,8 @@ internal static partial class Gouge {
 
         var yielded = new HashSet<int>();
 
-        if (preferredPart != -1) {
+        if (preferredPart != -1 && yielded.Add(preferredPart))
             yield return preferredPart;
-            yield break;
-        }
 
         if (_activePart != -1 && _activePart < Map.Parts.Count && yielded.Add(_activePart))
             yield return _activePart;

@@ -21,22 +21,7 @@ internal static class MapEditing {
             map.Parts[part].Vertices.Insert(index, point);
         }
 
-        public bool TryFindPointOnLine(Vector2 targetPoint, float selectDistance, out Vector2 point, out int partIndex, out int insertIndex) {
-
-            if (!map.TryFindLine(targetPoint, selectDistance, out point, out partIndex, out var startIndex, out _)) {
-                insertIndex = -1;
-                return false;
-            }
-
-            insertIndex = startIndex + 1;
-
-            return true;
-        }
-
-        public bool TryFindPointOnLine(Vector2 targetPoint, out Vector2 point, out int partIndex, out int insertIndex) =>
-            map.TryFindPointOnLine(targetPoint, float.PositiveInfinity, out point, out partIndex, out insertIndex);
-
-        public bool TryFindLine(Vector2 targetPoint, float selectDistance, out Vector2 point, out int partIndex, out int startIndex, out int endIndex) {
+        private bool TryFindLine(Vector2 targetPoint, float selectDistance, out Vector2 point, out int partIndex, out int startIndex, out int endIndex) {
 
             point = Vector2.Zero;
             partIndex = -1;
@@ -83,7 +68,7 @@ internal static class MapEditing {
                 if (i == ignorePart)
                     continue;
 
-                if (!Geometry2D.IsPointInPolygon(point, map.Parts[i].Vertices))
+                if (!Geometry2D.IsPointInPolygonOrOnEdge(point, map.Parts[i].Vertices))
                     continue;
 
                 var area = MathF.Abs(Geometry2D.SignedArea(map.Parts[i].Vertices));

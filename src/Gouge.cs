@@ -17,7 +17,6 @@ internal static partial class Gouge {
     private const float LineSelectPixels = 8f;
     
     private static int _activePart = -1;
-    private static int _hoveredPart3D = -1;
     private static (int part, Vector2 mouseStart, List<Vector2> vertices)? _selectedPart;
     private static ((int part, int start, int end) edge, Vector2 mouseStart, Vector2 startVertex, Vector2 endVertex)? _selectedLine;
     private static (int part, int vertex) _selectedVertex = (-1, -1);
@@ -95,8 +94,6 @@ internal static partial class Gouge {
                 var hoveredPart = hoveredVertex == (-1, -1) && hoveredLine.part == -1 && _selectedVertex == (-1, -1) && !_selectedLine.HasValue && !_selectedPart.HasValue
                     ? visiblePart
                     : -1;
-
-                _hoveredPart3D = hoveredPart;
 
                 Vector2? previewVertex = null;
 
