@@ -20,7 +20,9 @@ internal static partial class Gouge {
     private static int _activePart = -1;
     private static (int part, Vector2 mouseStart, List<Vector2> vertices)? _selectedPart;
     private static ((int part, int start, int end) edge, Vector2 mouseStart, Vector2 startVertex, Vector2 endVertex)? _selectedLine;
+    private static bool _selectedLineExtrudePending;
     private static (int part, int vertex) _selectedVertex = (-1, -1);
+    private static bool _selectedVertexExtrudePending;
     
     private static Vector2? _rectStart;
     private static int _rectParentPart = -1;
@@ -30,8 +32,8 @@ internal static partial class Gouge {
     private static Vector2 _rightMousePressPos;
     private static bool _rightMouseDragged;
     private static bool _rightMouseUsedForCamera;
-    private static (int part, int vertex, Vector2 screenStart)? _pendingVertex3D;
-    private static ((int part, int start, int end, Vector2 point) line, Vector2 screenStart)? _pendingLine3D;
+    private static (int part, int vertex, Vector2 screenStart, bool extrude)? _pendingVertex3D;
+    private static ((int part, int start, int end, Vector2 point) line, Vector2 screenStart, bool extrude)? _pendingLine3D;
     private static (int part, Vector2 screenStart)? _pendingPart3D;
 
     private const float DragSpeed = .05f;
@@ -540,6 +542,79 @@ internal static partial class Gouge {
         RecordHistorySnapshot();
     }
 
+    private static void BeginVertexDrag((int part, int vertex) vertex, bool extrude) {
+        _selectedVertex = vertex;
+        _selectedVertexExtrudePending = extrude;
+        _activePart = vertex.part;
+    }
+
+    private static void BeginLineDrag(int part, int start, int end, Vector2 mouseStart, Vector2 startVertex, Vector2 endVertex, bool extrude) {
+        _selectedLine = (
+            (part, start, end),
+            mouseStart,
+            startVertex,
+            endVertex
+        );
+        _selectedLineExtrudePending = extrude;
+        _activePart = part;
+    }
+
+    private static bool IsCtrlDown() =>
+        IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl);
+
+    private static void ExtrudeSelectedVertex() {
+
+        var selection = _selectedVertex;
+        var vertices = Map.Parts[selection.part].Vertices;
+        var insertIndex = selection.vertex + 1;
+        vertices.Insert(insertIndex, vertices[selection.vertex]);
+        _selectedVertex = (selection.part, insertIndex);
+        _selectedVertexExtrudePending = false;
+    }
+
+    private static void ExtrudeSelectedLine() {
+
+        if (!_selectedLine.HasValue)
+            return;
+
+        var selection = _selectedLine.Value;
+        var (start, end) = NormalizeLineExtrudeEdge(selection.edge.part, selection.edge.start, selection.edge.end);
+        var vertices = Map.Parts[selection.edge.part].Vertices;
+        var startVertex = vertices[start];
+        var endVertex = vertices[end];
+
+        vertices.Insert(start + 1, startVertex);
+        vertices.Insert(start + 2, endVertex);
+
+        _selectedLine = (
+            (selection.edge.part, start + 1, start + 2),
+            selection.mouseStart,
+            startVertex,
+            endVertex
+        );
+        _selectedLineExtrudePending = false;
+    }
+
+    private static (int start, int end) NormalizeLineExtrudeEdge(int partIndex, int start, int end) {
+
+        var vertices = Map.Parts[partIndex].Vertices;
+
+        if (end == start + 1)
+            return (start, end);
+
+        if (!(start == vertices.Count - 1 && end == 0))
+            return (start, end);
+
+        var rotated = new List<Vector2>(vertices.Count);
+
+        for (var i = 0; i < vertices.Count; i++)
+            rotated.Add(vertices[(start + i) % vertices.Count]);
+
+        vertices.Clear();
+        vertices.AddRange(rotated);
+        return (0, 1);
+    }
+
     private static void RecordHistorySnapshot() {
 
         var snapshot = Map.Clone();
@@ -589,7 +664,9 @@ internal static partial class Gouge {
     private static void ClearActiveEditState() {
         _selectedPart = null;
         _selectedLine = null;
+        _selectedLineExtrudePending = false;
         _selectedVertex = (-1, -1);
+        _selectedVertexExtrudePending = false;
         _rectStart = null;
         _rectParentPart = -1;
         _pendingVertex3D = null;
@@ -603,6 +680,9 @@ internal static partial class Gouge {
 
         var snappedPos = Snap(_mouseWorldPos);
 
+        if (_selectedVertexExtrudePending && snappedPos != Map.Parts[_selectedVertex.part].Vertices[_selectedVertex.vertex])
+            ExtrudeSelectedVertex();
+
         Map.Parts[_selectedVertex.part].Vertices[_selectedVertex.vertex] = snappedPos;
 
         if (!IsMouseButtonUp(MouseButton.Left)) return;
@@ -610,6 +690,7 @@ internal static partial class Gouge {
         TryMergeVertex(snappedPos);
         
         _selectedVertex = (-1, -1);
+        _selectedVertexExtrudePending = false;
         RecordHistorySnapshot();
     }
 
@@ -619,6 +700,13 @@ internal static partial class Gouge {
 
         var selection = _selectedLine.Value;
         var delta = Snap(_mouseWorldPos) - selection.mouseStart;
+
+        if (_selectedLineExtrudePending && delta != Vector2.Zero) {
+            ExtrudeSelectedLine();
+            selection = _selectedLine!.Value;
+            delta = Snap(_mouseWorldPos) - selection.mouseStart;
+        }
+
         var vertices = Map.Parts[selection.edge.part].Vertices;
 
         vertices[selection.edge.start] = selection.startVertex + delta;
@@ -627,6 +715,7 @@ internal static partial class Gouge {
         if (!IsMouseButtonUp(MouseButton.Left)) return;
 
         _selectedLine = null;
+        _selectedLineExtrudePending = false;
         RecordHistorySnapshot();
     }
 

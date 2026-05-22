@@ -57,9 +57,7 @@ internal static partial class Gouge {
     private static void SelectOrInsertVertex((int part, int vertex) hoveredVertex) {
 
         if (hoveredVertex != (-1, -1)) {
-
-            _selectedVertex = hoveredVertex;
-            _activePart = hoveredVertex.part;
+            BeginVertexDrag(hoveredVertex, IsCtrlDown());
             return;
         }
 
@@ -70,8 +68,7 @@ internal static partial class Gouge {
 
         var insertIndex = hoveredLine.start + 1;
         Map.InsertVertex(hoveredLine.part, insertIndex, hoveredLine.point);
-        _selectedVertex = (hoveredLine.part, insertIndex);
-        _activePart = hoveredLine.part;
+        BeginVertexDrag((hoveredLine.part, insertIndex), false);
     }
 
     private static void DrawParts((int part, int vertex) hoveredVertex, (int part, int start, int end, Vector2 point) hoveredLine, int hoveredPart) {
@@ -175,14 +172,15 @@ internal static partial class Gouge {
         var vertices = Map.Parts[hoveredLine.part].Vertices;
         var mouseStart = GetSelectionStartPoint(hoveredLine.part);
 
-        _selectedLine = (
-            (hoveredLine.part, hoveredLine.start, hoveredLine.end),
+        BeginLineDrag(
+            hoveredLine.part,
+            hoveredLine.start,
+            hoveredLine.end,
             mouseStart,
             vertices[hoveredLine.start],
-            vertices[hoveredLine.end]
+            vertices[hoveredLine.end],
+            IsCtrlDown()
         );
-
-        _activePart = hoveredLine.part;
         return true;
     }
 

@@ -423,7 +423,7 @@ internal static partial class Gouge {
     private static void QueueVertexDrag3D((int part, int vertex) hoveredVertex) {
 
         _activePart = hoveredVertex.part;
-        _pendingVertex3D = (hoveredVertex.part, hoveredVertex.vertex, GetMousePosition());
+        _pendingVertex3D = (hoveredVertex.part, hoveredVertex.vertex, GetMousePosition(), IsCtrlDown());
         _pendingLine3D = null;
         _pendingPart3D = null;
     }
@@ -431,7 +431,7 @@ internal static partial class Gouge {
     private static void QueueLineDrag3D((int part, int start, int end, Vector2 point) hoveredLine) {
 
         _activePart = hoveredLine.part;
-        _pendingLine3D = (hoveredLine, GetMousePosition());
+        _pendingLine3D = (hoveredLine, GetMousePosition(), IsCtrlDown());
         _pendingVertex3D = null;
         _pendingPart3D = null;
     }
@@ -461,16 +461,19 @@ internal static partial class Gouge {
 
         if (_pendingVertex3D.HasValue) {
             var pending = _pendingVertex3D.Value;
-            _selectedVertex = (pending.part, pending.vertex);
+            BeginVertexDrag((pending.part, pending.vertex), pending.extrude);
         }
         else if (_pendingLine3D.HasValue) {
             var pending = _pendingLine3D.Value;
             var vertices = Map.Parts[pending.line.part].Vertices;
-            _selectedLine = (
-                (pending.line.part, pending.line.start, pending.line.end),
+            BeginLineDrag(
+                pending.line.part,
+                pending.line.start,
+                pending.line.end,
                 GetSelectionStartPoint(pending.line.part, pending.screenStart),
                 vertices[pending.line.start],
-                vertices[pending.line.end]
+                vertices[pending.line.end],
+                pending.extrude
             );
         }
         else if (_pendingPart3D.HasValue) {
