@@ -13,8 +13,8 @@
     <PropertyGroup>
         <Authors>fkerimk</Authors>
         <Product>Gouge</Product>
-        <PackageProjectUrl>https://github.com/fkerimk/Sickle-Mapper</PackageProjectUrl>
-        <RepositoryUrl>git@github.com:fkerimk/Sickle-Mapper.git</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/fkerimk/Gouge</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/fkerimk/Gouge.git</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
     </PropertyGroup>
 
