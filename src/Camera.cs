@@ -1,8 +1,8 @@
 using System.Numerics;
-using Sickle.Heart.Core;
-using static Sickle.Heart.Core.Button;
+using Raylib_cs;
+using static Raylib_cs.Raylib;
 
-internal static partial class Program {
+internal static partial class Gouge {
     
     private const float Camera3DMoveSpeed = 6f;
     private const float Camera3DMouseSensitivity = 0.0035f;
@@ -21,9 +21,9 @@ internal static partial class Program {
 
     private static void UpdateCamera3D() {
         
-        if (!Gui.WantCaptureMouse && Input.IsButtonDown(MouseRight)) {
+        if (!Io.WantCaptureMouse && IsMouseButtonDown(MouseButton.Right)) {
 
-            var mouseDelta = Input.MouseDelta;
+            var mouseDelta = GetMouseDelta();
                 
             _camera3DYaw += mouseDelta.X * Camera3DMouseSensitivity;
             _camera3DPitch = Math.Clamp(_camera3DPitch - mouseDelta.Y * Camera3DMouseSensitivity, -Camera3DPitchLimit, Camera3DPitchLimit);
@@ -41,16 +41,16 @@ internal static partial class Program {
             
         var move = Vector2.Zero;
 
-        if (Input.IsButtonDown(KeyBoardW)) move += forward2D;
-        if (Input.IsButtonDown(KeyBoardS)) move -= forward2D;
-        if (Input.IsButtonDown(KeyBoardA)) move -= right2D;
-        if (Input.IsButtonDown(KeyBoardD)) move += right2D;
+        if (IsKeyDown(KeyboardKey.W)) move += forward2D;
+        if (IsKeyDown(KeyboardKey.S)) move -= forward2D;
+        if (IsKeyDown(KeyboardKey.A)) move -= right2D;
+        if (IsKeyDown(KeyboardKey.D)) move += right2D;
 
-        if (Input.IsButtonDown(KeyBoardQ)) _camera3DHeight -= Camera3DMoveSpeed * Time.Delta;
-        if (Input.IsButtonDown(KeyBoardE)) _camera3DHeight += Camera3DMoveSpeed * Time.Delta;
+        if (IsKeyDown(KeyboardKey.Q)) _camera3DHeight -= Camera3DMoveSpeed * GetFrameTime();
+        if (IsKeyDown(KeyboardKey.E)) _camera3DHeight += Camera3DMoveSpeed * GetFrameTime();
 
         if (move != Vector2.Zero)
-            Render.Cam2D.Target += Vector2.Normalize(move) * Camera3DMoveSpeed * Time.Delta;
+            Render.Cam2D.Target += Vector2.Normalize(move) * Camera3DMoveSpeed * GetFrameTime();
 
         Render.Cam3D.Position = new Vector3(Render.Cam2D.Target.X, _camera3DHeight, Render.Cam2D.Target.Y);
         Render.Cam3D.Target = Render.Cam3D.Position + forward;
@@ -59,19 +59,19 @@ internal static partial class Program {
 
     private static void UpdateCamera2D() {
         
-        if (Gui.WantCaptureMouse)
+        if (Io.WantCaptureMouse)
             return;
 
-        if (Input.IsButtonDown(MouseMiddle))
-            Render.Cam2D.Target -= Input.MouseDelta / Render.Cam2D.Zoom;
+        if (IsMouseButtonDown(MouseButton.Middle))
+            Render.Cam2D.Target -= GetMouseDelta() / Render.Cam2D.Zoom;
 
-        if (Input.MouseScroll == 0) return;
+        if (GetMouseWheelMove() == 0) return;
 
-        var mouseWorldBeforeZoom = Input.MouseWorldPos;
+        var mouseWorldBeforeZoom = MouseWorldPos;
 
-        Render.Cam2D.Zoom += Input.MouseScroll * Render.Cam2D.Zoom / 2f;
+        Render.Cam2D.Zoom += GetMouseWheelMove() * Render.Cam2D.Zoom / 2f;
         Render.Cam2D.Zoom = MathF.Max(Render.Cam2D.Zoom, 2f);
 
-        Render.Cam2D.Target = mouseWorldBeforeZoom - (Input.MousePos - Render.Cam2D.Offset) / Render.Cam2D.Zoom;
+        Render.Cam2D.Target = mouseWorldBeforeZoom - (GetMousePosition() - Render.Cam2D.Offset) / Render.Cam2D.Zoom;
     }
 }

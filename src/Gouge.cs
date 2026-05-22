@@ -1,11 +1,13 @@
 ﻿using System.Numerics;
+using ImGuiNET;
+using Raylib_cs;
+using rlImGui_cs;
+using static Raylib_cs.ConfigFlags;
+using static Raylib_cs.Raylib;
+using static Raylib_cs.TraceLogLevel;
+using static rlImGui_cs.rlImGui;
 
-using Sickle.Heart.Core;
-using Sickle.Heart.Map;
-
-using static Sickle.Heart.Core.Button;
-
-internal static partial class Program {
+internal static partial class Gouge {
 
     private static readonly Map Map = new();
     private static readonly string[] TextureFiles = Resources.GetResourceFiles("texture");
@@ -24,20 +26,38 @@ internal static partial class Program {
     private static Vector2? _rectStart;
     private static int _rectParentPart = -1;
 
-    public static void Main() {
+    public static ImGuiIOPtr Io;
+    public static Vector2 MouseWorldPos;
+    
+    public const float DragSpeed = .05f;
+    
+    public static unsafe void Main() {
         
-        Window.Open();
-        Gui.Setup();
-
+        SetTraceLogLevel(Error);
+        SetConfigFlags(ResizableWindow);
+        InitWindow(1280, 720, "Gouge");
+        SetWindowMonitor(0);
+        SetExitKey(0);
+        
+        Setup();
+        Io = ImGui.GetIO();
+        Io.NativePtr->IniFilename = null;
+        Io.Fonts.Clear();
+        var montserratRegular = Resources.FindResourceFile("font", "Montserrat-Regular.ttf");
+        Io.Fonts.AddFontFromFileTTF(montserratRegular, 18f);
+        ReloadFonts();
+        
         CreateDefaultPart();
+        
+        while (!WindowShouldClose()) {
+            
+            MouseWorldPos = GetScreenToWorld2D(GetMousePosition(), Render.Cam2D);
 
-        while (Window.IsAlive()) {
-
-            if (Input.IsButtonPressed(KeyBoardSpace))
+            if (IsKeyPressed(KeyboardKey.Space))
                 _mode3D = !_mode3D;
             
-            if (_mode3D)
-                Handle3DSelection();
+            if (_mode3D) Handle3DSelection();
+            
             else {
                 
                 MoveSelectedVertex();
@@ -46,11 +66,67 @@ internal static partial class Program {
             }
             
             UpdateCamera();
-            Draw();
+            
+            BeginDrawing();
+            ClearBackground(Colors.Background);
+            
+            if (_mode3D) {
+                
+                BeginMode3D(Render.Cam3D);
+            
+                Render.Map(Map);
+
+                if (_hoveredPart3D != -1 && _hoveredPart3D < Map.Parts.Count && _hoveredPart3D != _activePart)
+                    Render.PartOutline(Map.Parts[_hoveredPart3D], Colors.Gold);
+
+                if (_activePart != -1 && _activePart < Map.Parts.Count)
+                    Render.PartOutline(Map.Parts[_activePart], Colors.Orange);
+            
+                EndMode3D();
+                
+            } else {
+                
+                Render.Cam2D.Offset = new Vector2(GetScreenWidth() * 0.5f, GetScreenHeight() * 0.5f);
+                
+                BeginMode2D(Render.Cam2D);;
+
+                DrawGrid();
+
+                var hoveredVertex = _selectedVertex == (-1, -1)
+                    ? FindHoveredVertex()
+                    : (-1, -1);
+                var hoveredLine = hoveredVertex == (-1, -1) && _selectedVertex == (-1, -1) && !_selectedLine.HasValue
+                    ? FindHoveredLine()
+                    : (part: -1, start: -1, end: -1, point: Vector2.Zero);
+                var hoveredPart = hoveredVertex == (-1, -1) && hoveredLine.part == -1 && _selectedVertex == (-1, -1) && !_selectedLine.HasValue && !_selectedPart.HasValue
+                    ? Map.FindPartContaining(MouseWorldPos)
+                    : -1;
+
+                Vector2? previewVertex = null;
+
+                Handle2DEditing(ref hoveredVertex, ref hoveredLine, ref hoveredPart, ref previewVertex);
+
+                DrawParts(hoveredVertex, hoveredLine, hoveredPart);
+                DrawRectPreview();
+
+                if (previewVertex.HasValue)
+                    Render.Square(Colors.Orange, previewVertex.Value, .1f);
+
+                EndMode2D();
+            }
+
+            Begin();
+        
+            DrawPartInspector();
+        
+            End();
+        
+            EndDrawing();
         }
 
-        Gui.Shutdown();
-        Window.Close();
+        Shutdown();
+        
+        CloseWindow();
     }
 
     private static void CreateDefaultPart() {
@@ -70,11 +146,11 @@ internal static partial class Program {
         
         if (_selectedVertex == (-1, -1)) return;
 
-        var snappedPos = Snap(Input.MouseWorldPos);
+        var snappedPos = Snap(MouseWorldPos);
 
         Map.Parts[_selectedVertex.part].Vertices[_selectedVertex.vertex] = snappedPos;
 
-        if (!Input.IsButtonUp(MouseLeft)) return;
+        if (!IsMouseButtonUp(MouseButton.Left)) return;
 
         TryMergeVertex(snappedPos);
         
@@ -86,13 +162,13 @@ internal static partial class Program {
         if (!_selectedLine.HasValue) return;
 
         var selection = _selectedLine.Value;
-        var delta = Snap(Input.MouseWorldPos) - selection.mouseStart;
+        var delta = Snap(MouseWorldPos) - selection.mouseStart;
         var vertices = Map.Parts[selection.edge.part].Vertices;
 
         vertices[selection.edge.start] = selection.startVertex + delta;
         vertices[selection.edge.end] = selection.endVertex + delta;
 
-        if (!Input.IsButtonUp(MouseLeft)) return;
+        if (!IsMouseButtonUp(MouseButton.Left)) return;
 
         _selectedLine = null;
     }
@@ -102,20 +178,20 @@ internal static partial class Program {
         if (!_selectedPart.HasValue) return;
 
         var selection = _selectedPart.Value;
-        var delta = Snap(Input.MouseWorldPos) - selection.mouseStart;
+        var delta = Snap(MouseWorldPos) - selection.mouseStart;
         var vertices = Map.Parts[selection.part].Vertices;
 
         for (var i = 0; i < vertices.Count; i++)
             vertices[i] = selection.vertices[i] + delta;
 
-        if (!Input.IsButtonUp(MouseLeft)) return;
+        if (!IsMouseButtonUp(MouseButton.Left)) return;
 
         _selectedPart = null;
     }
 
     private static Vector2 Snap(Vector2 position) {
         
-        var snap = Input.IsButtonDown(KeyBoardLeftAlt) ? 10f : 1f;
+        var snap = IsKeyDown(KeyboardKey.LeftAlt) ? 10f : 1f;
 
         return new Vector2 (
             
@@ -136,7 +212,7 @@ internal static partial class Program {
 
     private static void DrawGrid() {
         
-        if (Input.IsButtonDown(KeyBoardLeftAlt)) {
+        if (IsKeyDown(KeyboardKey.LeftAlt)) {
             
             Render.Grid(.1f, Colors.GridBottom);
             Render.Grid(1f, Colors.GridTop);
@@ -155,7 +231,7 @@ internal static partial class Program {
 
             for (var j = 0; j < vertices.Count; j++) {
 
-                var distance = Util.Distance(Input.MouseWorldPos, vertices[j]);
+                var distance = Raymath.Vector2Distance(MouseWorldPos, vertices[j]);
 
                 if (distance > bestDistance)
                     continue;
@@ -217,36 +293,36 @@ internal static partial class Program {
         }
     }
 
-    private static Raylib_cs.Color GetPartColor(int partIndex, int hoveredPart) {
+    private static Color GetPartColor(int partIndex, int hoveredPart) {
         
         if (_activePart != partIndex) return hoveredPart == partIndex ? Colors.PartHover : Colors.Part;
         
-        var pulse = (MathF.Sin(Time.Total * 5f) + 1f) * 0.5f;
+        var pulse = (MathF.Sin((float)GetTime() * 5f) + 1f) * 0.5f;
         var alpha = (byte)(18 + pulse * 42);
         
-        return new Raylib_cs.Color((byte)255, (byte)165, (byte)0, alpha);
+        return new Color((byte)255, (byte)165, (byte)0, alpha);
     }
 
     private static void Handle2DEditing(ref (int part, int vertex) hoveredVertex, ref (int part, int start, int end, Vector2 point) hoveredLine, ref int hoveredPart, ref Vector2? previewVertex) {
 
-        if (Gui.WantCaptureMouse) return;
+        if (Io.WantCaptureMouse) return;
 
         if (_selectedVertex != (-1, -1) || _selectedLine.HasValue || _selectedPart.HasValue) return;
 
         if (_rectStart.HasValue) {
 
-            if (Input.IsButtonReleased(MouseLeft))
+            if (IsMouseButtonReleased(MouseButton.Left))
                 FinishRectCreate();
 
             return;
         }
 
         var hasLinePoint = hoveredLine.part != -1;
-        var canInsertVertex = Input.IsButtonDown(KeyBoardLeftShift) && hasLinePoint;
+        var canInsertVertex = IsKeyDown(KeyboardKey.LeftShift) && hasLinePoint;
 
         if (canInsertVertex) previewVertex = hoveredLine.point;
 
-        if (Input.IsButtonDown(MouseRight) && hoveredVertex != (-1, -1)) {
+        if (IsMouseButtonDown(MouseButton.Right) && hoveredVertex != (-1, -1)) {
 
             if (_activePart == hoveredVertex.part && Map.Parts[hoveredVertex.part].Vertices.Count <= 3)
                 _activePart = -1;
@@ -256,7 +332,7 @@ internal static partial class Program {
             return;
         }
 
-        if (!Input.IsButtonPressed(MouseLeft)) return;
+        if (!IsMouseButtonPressed(MouseButton.Left)) return;
 
         if (hoveredVertex != (-1, -1)) {
             
@@ -264,7 +340,7 @@ internal static partial class Program {
             return;
         }
 
-        if (hoveredPart != -1 && !Input.IsButtonDown(KeyBoardLeftShift)) {
+        if (hoveredPart != -1 && !IsKeyDown(KeyboardKey.LeftShift)) {
             
             TrySelectPart(hoveredPart);
             return;
@@ -278,14 +354,14 @@ internal static partial class Program {
 
         if (hoveredLine.part != -1 && TrySelectLine(hoveredLine)) return;
 
-        _rectStart = Snap(Input.MouseWorldPos);
+        _rectStart = Snap(MouseWorldPos);
         _rectParentPart = hoveredPart;
     }
 
     private static bool TrySelectLine((int part, int start, int end, Vector2 point) hoveredLine) {
 
         var vertices = Map.Parts[hoveredLine.part].Vertices;
-        var mouseStart = Snap(Input.MouseWorldPos);
+        var mouseStart = Snap(MouseWorldPos);
 
         _selectedLine = (
             
@@ -307,7 +383,7 @@ internal static partial class Program {
         _selectedPart = (
             
             hoveredPart,
-            Snap(Input.MouseWorldPos),
+            Snap(MouseWorldPos),
             Map.Parts[hoveredPart].Vertices.Select(vertex => vertex).ToList()
         );
     }
@@ -321,7 +397,7 @@ internal static partial class Program {
         if (!_rectStart.HasValue) return;
 
         var start = _rectStart.Value;
-        var end = Snap(Input.MouseWorldPos);
+        var end = Snap(MouseWorldPos);
 
         _rectStart = null;
         var hoveredPart = _rectParentPart;
@@ -339,7 +415,7 @@ internal static partial class Program {
         part.Vertices.Add(new Vector2(max.X, max.Y));
         part.Vertices.Add(new Vector2(max.X, min.Y));
 
-        if (hoveredPart != -1 && !part.Vertices.All(vertex => Util.IsPointInPolygon(vertex, Map.Parts[hoveredPart].Vertices)))
+        if (hoveredPart != -1 && !part.Vertices.All(vertex => IsPointInPolygon(vertex, Map.Parts[hoveredPart].Vertices)))
             return;
         
         Map.Parts.Add(part);
@@ -352,7 +428,7 @@ internal static partial class Program {
         if (!_rectStart.HasValue) return;
 
         var start = _rectStart.Value;
-        var end = Snap(Input.MouseWorldPos);
+        var end = Snap(MouseWorldPos);
         var min = Vector2.Min(start, end);
         var max = Vector2.Max(start, end);
 
@@ -388,73 +464,74 @@ internal static partial class Program {
 
     private static void DrawPartInspector() {
 
-        Gui.SetNextWindow(Vector2.Zero, new Vector2(340, Window.Height));
+        ImGui.SetNextWindowPos(Vector2.Zero);
+        ImGui.SetNextWindowSize(new Vector2(340, GetScreenHeight()));
 
-        if (!Gui.Begin("Part")) {
+        if (!ImGui.Begin("Part", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse)) {
             
-            Gui.End();
+            ImGui.End();
             return;
         }
 
-        Gui.Text(_mode3D ? "Mode: 3D" : "Mode: 2D");
+        ImGui.Text(_mode3D ? "Mode: 3D" : "Mode: 2D");
 
         if (_activePart < 0 || _activePart >= Map.Parts.Count) {
             
-            Gui.Separator();
-            Gui.Text("No part selected.");
-            Gui.End();
+            ImGui.Separator();
+            ImGui.Text("No part selected.");
+            ImGui.End();
             
             return;
         }
 
         var part = Map.Parts[_activePart];
 
-        Gui.Separator();
-        Gui.Text($"Selected Part: {_activePart}");
+        ImGui.Separator();
+        ImGui.Text($"Selected Part: {_activePart}");
 
         var height = part.Height;
         
-        if (Gui.DragFloat("Height", ref height, 0.1f, 1000f))
+        if (ImGui.DragFloat("Height", ref height, DragSpeed, 0.1f, 1000f))
             part.Height = height;
 
         var yOffset = part.YOffset;
         
-        if (Gui.DragFloat("YOffset", ref yOffset, -1000f, 1000f))
+        if (ImGui.DragFloat("YOffset", ref yOffset, DragSpeed, -1000f, 1000f))
             part.YOffset = yOffset;
 
         DrawSurfaceEditor("Floor", part.Floor);
         DrawSurfaceEditor("Wall", part.Wall);
         DrawSurfaceEditor("Ceil", part.Ceil);
 
-        Gui.End();
+        ImGui.End();
     }
 
     private static void DrawSurfaceEditor(string label, Surface surface) {
 
-        if (!Gui.CollapsingHeader(label)) return;
+        if (!ImGui.CollapsingHeader(label)) return;
 
         DrawTextureField($"{label} Texture", surface);
 
         var mode = (int)surface.Mode;
         var modeNames = Enum.GetNames<TileMode>();
         
-        if (Gui.Combo($"{label} Mode", modeNames, ref mode))
+        if (ImGui.Combo($"{label} Mode", ref mode, modeNames, modeNames.Length))
             surface.Mode = (TileMode)mode;
 
         var wrap = (int)surface.Wrap;
-        var wrapNames = Enum.GetNames<Raylib_cs.TextureWrap>();
+        var wrapNames = Enum.GetNames<TextureWrap>();
         
-        if (Gui.Combo($"{label} Wrap", wrapNames, ref wrap))
-            surface.Wrap = (Raylib_cs.TextureWrap)wrap;
+        if (ImGui.Combo($"{label} Wrap", ref wrap, wrapNames, wrapNames.Length))
+            surface.Wrap = (TextureWrap)wrap;
 
         var tiling = surface.Tiling;
         
-        if (Gui.DragVector2($"{label} Tiling", ref tiling, 0.01f, 1000f))
+        if (ImGui.DragFloat2($"{label} Tiling", ref tiling, DragSpeed, 0.01f, 1000f))
             surface.Tiling = tiling;
 
         var offset = surface.Offset;
         
-        if (Gui.DragVector2($"{label} Offset", ref offset))
+        if (ImGui.DragFloat2($"{label} Offset", ref offset, DragSpeed))
             surface.Offset = offset;
     }
 
@@ -462,7 +539,7 @@ internal static partial class Program {
 
         var texture = surface.Texture;
         
-        if (Gui.InputText(label, ref texture, 256))
+        if (ImGui.InputText(label, ref texture, 256))
             surface.Texture = texture;
 
         if (TextureFiles.Length == 0)
@@ -473,7 +550,25 @@ internal static partial class Program {
         if (currentIndex < 0)
             currentIndex = 0;
 
-        if (Gui.Combo($"{label} Presets", TextureFiles, ref currentIndex))
+        if (ImGui.Combo($"{label} Presets", ref currentIndex, TextureFiles, TextureFiles.Length))
             surface.Texture = TextureFiles[currentIndex];
+    }
+    
+    public static bool IsPointInPolygon(Vector2 point, List<Vector2> vertices) {
+
+        var inside = false;
+
+        for (var i = 0; i < vertices.Count; i++) {
+            var a = vertices[i];
+            var b = vertices[(i + 1) % vertices.Count];
+
+            var intersects = a.Y > point.Y != b.Y > point.Y
+                             && point.X < (b.X - a.X) * (point.Y - a.Y) / (b.Y - a.Y + float.Epsilon) + a.X;
+
+            if (intersects)
+                inside = !inside;
+        }
+
+        return inside;
     }
 }
