@@ -215,9 +215,11 @@ internal static partial class Gouge {
         }
 
         var step = IsKeyDown(KeyboardKey.LeftAlt) || IsKeyDown(KeyboardKey.RightAlt) ? 0.1f : 1f;
-        var moved = _mode3D
-            ? TryMoveActivePart3D(step)
-            : TryMoveActivePart2D(step);
+        var shift = IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift);
+        var ctrl = IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl);
+        var moved = shift
+            ? (_mode3D ? TryEditActivePartVertices3D(step, ctrl) : TryEditActivePartVertices2D(step, ctrl))
+            : (_mode3D ? TryMoveActivePart3D(step) : TryMoveActivePart2D(step));
 
         if (moved)
             RecordHistorySnapshot();
@@ -261,6 +263,45 @@ internal static partial class Gouge {
         return true;
     }
 
+    private static bool TryEditActivePartVertices2D(float step, bool extrude) {
+
+        var keyMove = GetArrowKeyDirection();
+
+        if (keyMove == Vector2.Zero)
+            return false;
+
+        var pivot = GetActivePartCenter2D(_activePart);
+        var right = GetScreenAlignedAxis2D(pivot, new Vector2(1f, 0f));
+        var up = GetScreenAlignedAxis2D(pivot, new Vector2(0f, -1f));
+        var direction = right * keyMove.X + up * keyMove.Y;
+
+        if (direction == Vector2.Zero)
+            return false;
+
+        return extrude
+            ? ExtrudeExtremeVertices(_activePart, Vector2.Normalize(direction), step)
+            : MoveExtremeVertices(_activePart, Vector2.Normalize(direction), step);
+    }
+
+    private static bool TryEditActivePartVertices3D(float step, bool extrude) {
+
+        var keyMove = GetArrowKeyDirection();
+
+        if (keyMove == Vector2.Zero)
+            return false;
+
+        var forward = GetSnappedPlanarForwardAxis3D();
+        var right = GetSnappedPlanarRightAxis3D(forward);
+        var direction = right * keyMove.X + forward * keyMove.Y;
+
+        if (direction == Vector2.Zero)
+            return false;
+
+        return extrude
+            ? ExtrudeExtremeVertices(_activePart, Vector2.Normalize(direction), step)
+            : MoveExtremeVertices(_activePart, Vector2.Normalize(direction), step);
+    }
+
     private static Vector2 GetActivePartCenter2D(int partIndex) {
 
         var part = Map.Parts[partIndex];
@@ -271,6 +312,23 @@ internal static partial class Gouge {
 
         return sum / part.Vertices.Count;
     }
+
+    private static Vector2 GetSnappedPlanarForwardAxis3D() {
+
+        var forward3D = Vector3.Normalize(Render.Cam3D.Target - Render.Cam3D.Position);
+        var forward = new Vector2(forward3D.X, forward3D.Z);
+
+        if (forward == Vector2.Zero)
+            return Vector2.UnitY;
+
+        if (MathF.Abs(forward.X) >= MathF.Abs(forward.Y))
+            return forward.X >= 0f ? Vector2.UnitX : -Vector2.UnitX;
+
+        return forward.Y >= 0f ? Vector2.UnitY : -Vector2.UnitY;
+    }
+
+    private static Vector2 GetSnappedPlanarRightAxis3D(Vector2 forward) =>
+        new(-forward.Y, forward.X);
 
     private static Vector3 GetActivePartCenter(int partIndex) {
 
@@ -365,6 +423,98 @@ internal static partial class Gouge {
             direction.Y--;
 
         return direction == Vector2.Zero ? direction : Vector2.Normalize(direction);
+    }
+
+    private static bool MoveExtremeVertices(int partIndex, Vector2 direction, float step) {
+
+        var part = Map.Parts[partIndex];
+        var extreme = GetExtremeVertexIndices(part.Vertices, direction);
+
+        if (extreme.Count == 0)
+            return false;
+
+        var delta = direction * step;
+
+        foreach (var index in extreme)
+            part.Vertices[index] += delta;
+
+        return true;
+    }
+
+    private static bool ExtrudeExtremeVertices(int partIndex, Vector2 direction, float step) {
+
+        var part = Map.Parts[partIndex];
+        var extreme = GetExtremeVertexIndices(part.Vertices, direction);
+
+        if (extreme.Count == 0 || extreme.Count == part.Vertices.Count)
+            return MoveExtremeVertices(partIndex, direction, step);
+
+        var vertices = RotateVerticesToNonExtremeStart(part.Vertices, extreme);
+        var selected = vertices.Select(vertex => IsExtremeVertex(vertex, vertices, direction)).ToArray();
+        var delta = direction * step;
+        var extruded = new List<Vector2>(vertices.Count + extreme.Count + 2);
+
+        for (var i = 0; i < vertices.Count; i++) {
+            extruded.Add(vertices[i]);
+
+            if (!selected[i] || selected[(i - 1 + selected.Length) % selected.Length])
+                continue;
+
+            var end = i;
+
+            while (end + 1 < selected.Length && selected[end + 1])
+                end++;
+
+            for (var j = i; j <= end; j++)
+                extruded.Add(vertices[j] + delta);
+
+            extruded.Add(vertices[end]);
+            i = end;
+        }
+
+        part.Vertices.Clear();
+        part.Vertices.AddRange(extruded);
+        return true;
+    }
+
+    private static List<int> GetExtremeVertexIndices(List<Vector2> vertices, Vector2 direction) {
+
+        var maxProjection = float.NegativeInfinity;
+
+        foreach (var vertex in vertices)
+            maxProjection = MathF.Max(maxProjection, Vector2.Dot(vertex, direction));
+
+        var indices = new List<int>();
+
+        for (var i = 0; i < vertices.Count; i++) {
+            if (MathF.Abs(Vector2.Dot(vertices[i], direction) - maxProjection) <= 0.0001f)
+                indices.Add(i);
+        }
+
+        return indices;
+    }
+
+    private static bool IsExtremeVertex(Vector2 vertex, List<Vector2> vertices, Vector2 direction) {
+
+        var projection = Vector2.Dot(vertex, direction);
+        var maxProjection = float.NegativeInfinity;
+
+        foreach (var candidate in vertices)
+            maxProjection = MathF.Max(maxProjection, Vector2.Dot(candidate, direction));
+
+        return MathF.Abs(projection - maxProjection) <= 0.0001f;
+    }
+
+    private static List<Vector2> RotateVerticesToNonExtremeStart(List<Vector2> vertices, List<int> extreme) {
+
+        var selected = new HashSet<int>(extreme);
+        var start = Enumerable.Range(0, vertices.Count).First(index => !selected.Contains(index));
+        var rotated = new List<Vector2>(vertices.Count);
+
+        for (var i = 0; i < vertices.Count; i++)
+            rotated.Add(vertices[(start + i) % vertices.Count]);
+
+        return rotated;
     }
 
     private static void TranslatePart(int partIndex, Vector2 planarDelta, float yDelta) {
