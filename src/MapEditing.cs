@@ -75,16 +75,27 @@ internal static class MapEditing {
 
         public int FindPartContaining(Vector2 point, int ignorePart = -1) {
 
-            for (var i = map.Parts.Count - 1; i >= 0; i--) {
+            var bestIndex = -1;
+            var bestArea = float.PositiveInfinity;
+
+            for (var i = 0; i < map.Parts.Count; i++) {
 
                 if (i == ignorePart)
                     continue;
 
-                if (Geometry2D.IsPointInPolygon(point, map.Parts[i].Vertices))
-                    return i;
+                if (!Geometry2D.IsPointInPolygon(point, map.Parts[i].Vertices))
+                    continue;
+
+                var area = MathF.Abs(Geometry2D.SignedArea(map.Parts[i].Vertices));
+
+                if (area >= bestArea)
+                    continue;
+
+                bestArea = area;
+                bestIndex = i;
             }
 
-            return -1;
+            return bestIndex;
         }
     }
 }

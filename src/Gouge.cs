@@ -27,6 +27,11 @@ internal static partial class Gouge {
 
     private static ImGuiIOPtr _io;
     private static Vector2 _mouseWorldPos;
+    private static Vector2 _rightMousePressPos;
+    private static bool _rightMouseDragged;
+    private static (int part, int vertex, Vector2 screenStart)? _pendingVertex3D;
+    private static ((int part, int start, int end, Vector2 point) line, Vector2 screenStart)? _pendingLine3D;
+    private static (int part, Vector2 screenStart)? _pendingPart3D;
 
     private const float DragSpeed = .05f;
     
@@ -49,20 +54,25 @@ internal static partial class Gouge {
         CreateDefaultPart();
         
         while (!WindowShouldClose()) {
-            
-            _mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), Render.Cam2D);
 
             if (IsKeyPressed(KeyboardKey.Space))
                 _mode3D = !_mode3D;
-            
-            if (_mode3D) Handle3DSelection();
-            
-            else {
-                
-                MoveSelectedVertex();
-                MoveSelectedLine();
-                MoveSelectedPart();
+
+            if (_mode3D) {
+                if (!TryUpdateMouseWorldPos3D())
+                    _mouseWorldPos = Render.Cam2D.Target;
             }
+            else _mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), Render.Cam2D);
+
+            if (_mode3D)
+                ProcessPending3DDrag();
+
+            if (_mode3D)
+                Handle3DPartWheel();
+
+            MoveSelectedVertex();
+            MoveSelectedLine();
+            MoveSelectedPart();
             
             UpdateCamera();
             
@@ -70,16 +80,41 @@ internal static partial class Gouge {
             ClearBackground(Colors.Background);
             
             if (_mode3D) {
-                
+
+                var visibleHit = !_selectedLine.HasValue && !_selectedPart.HasValue
+                    ? FindHoveredPartHit3D()
+                    : (part: -1, distance: float.PositiveInfinity);
+                var visiblePart = FindPreferredPartOnHoverPlane3D(visibleHit.part);
+
+                var hoveredVertex = (-1, -1);
+                var hoveredLine = (part: -1, start: -1, end: -1, point: Vector2.Zero);
+
+                if (_selectedVertex == (-1, -1) && !_selectedLine.HasValue)
+                    ResolveHoveredGeometry3D(visiblePart, visibleHit.distance, out hoveredVertex, out hoveredLine);
+
+                var hoveredPart = hoveredVertex == (-1, -1) && hoveredLine.part == -1 && _selectedVertex == (-1, -1) && !_selectedLine.HasValue && !_selectedPart.HasValue
+                    ? visiblePart
+                    : -1;
+
+                _hoveredPart3D = hoveredPart;
+
+                Vector2? previewVertex = null;
+
+                Handle2DEditing(ref hoveredVertex, ref hoveredLine, ref hoveredPart, ref previewVertex);
+
                 BeginMode3D(Render.Cam3D);
             
+                DrawGrid3D();
                 Render.Map(Map);
+                DrawParts3D(hoveredVertex, hoveredLine, hoveredPart);
+                DrawRectPreview3D();
 
-                if (_hoveredPart3D != -1 && _hoveredPart3D < Map.Parts.Count && _hoveredPart3D != _activePart)
-                    Render.PartOutline(Map.Parts[_hoveredPart3D], Colors.Gold);
-
-                if (_activePart != -1 && _activePart < Map.Parts.Count)
-                    Render.PartOutline(Map.Parts[_activePart], Colors.Orange);
+                if (previewVertex.HasValue) {
+                    var y = hoveredLine.part != -1
+                        ? Map.Parts[hoveredLine.part].YOffset
+                        : GetEditPlaneY();
+                    DrawCubeV(new Vector3(previewVertex.Value.X, y, previewVertex.Value.Y), new Vector3(HandleSize3D), Colors.Orange);
+                }
             
                 EndMode3D();
                 
@@ -91,14 +126,18 @@ internal static partial class Gouge {
 
                 DrawGrid();
 
+                var visiblePart = !_selectedLine.HasValue && !_selectedPart.HasValue
+                    ? Map.FindPartContaining(_mouseWorldPos)
+                    : -1;
+
                 var hoveredVertex = _selectedVertex == (-1, -1)
-                    ? FindHoveredVertex()
+                    ? FindHoveredVertex(visiblePart)
                     : (-1, -1);
                 var hoveredLine = hoveredVertex == (-1, -1) && _selectedVertex == (-1, -1) && !_selectedLine.HasValue
-                    ? FindHoveredLine()
+                    ? FindHoveredLine(visiblePart)
                     : (part: -1, start: -1, end: -1, point: Vector2.Zero);
                 var hoveredPart = hoveredVertex == (-1, -1) && hoveredLine.part == -1 && _selectedVertex == (-1, -1) && !_selectedLine.HasValue && !_selectedPart.HasValue
-                    ? Map.FindPartContaining(_mouseWorldPos)
+                    ? visiblePart
                     : -1;
 
                 Vector2? previewVertex = null;
@@ -199,6 +238,24 @@ internal static partial class Gouge {
             return;
         
         Map.DeleteVertex(_selectedVertex);
+    }
+
+    private static void Handle3DPartWheel() {
+
+        if (_io.WantCaptureMouse || _activePart < 0 || _activePart >= Map.Parts.Count)
+            return;
+
+        var wheel = GetMouseWheelMove();
+
+        if (wheel == 0f)
+            return;
+
+        var part = Map.Parts[_activePart];
+        var delta = wheel * 0.25f;
+
+        if (IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift))
+            part.YOffset += delta;
+        else part.Height = MathF.Max(0.25f, part.Height + delta);
     }
 
     private static void DrawGrid() {

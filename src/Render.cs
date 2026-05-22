@@ -27,21 +27,27 @@ internal static partial class Render {
     };
     
     public static void Grid(float spacing, Color color) {
-        
-        var topLeft = GetScreenToWorld2D(Vector2.Zero, Cam2D);
-        var bottomRight = GetScreenToWorld2D(new Vector2(GetScreenWidth(), GetScreenHeight()), Cam2D);
 
-        var startX = MathF.Floor(topLeft.X / spacing) * spacing;
-        var startY = MathF.Floor(topLeft.Y / spacing) * spacing;
-        
-        var endX = MathF.Ceiling(bottomRight.X / spacing) * spacing;
-        var endY = MathF.Ceiling(bottomRight.Y / spacing) * spacing;
+        var corners = new[] {
+            GetScreenToWorld2D(Vector2.Zero, Cam2D),
+            GetScreenToWorld2D(new Vector2(GetScreenWidth(), 0f), Cam2D),
+            GetScreenToWorld2D(new Vector2(0f, GetScreenHeight()), Cam2D),
+            GetScreenToWorld2D(new Vector2(GetScreenWidth(), GetScreenHeight()), Cam2D)
+        };
+
+        var min = new Vector2(corners.Min(corner => corner.X), corners.Min(corner => corner.Y));
+        var max = new Vector2(corners.Max(corner => corner.X), corners.Max(corner => corner.Y));
+
+        var startX = MathF.Floor(min.X / spacing) * spacing;
+        var startY = MathF.Floor(min.Y / spacing) * spacing;
+        var endX = MathF.Ceiling(max.X / spacing) * spacing;
+        var endY = MathF.Ceiling(max.Y / spacing) * spacing;
 
         for (var x = startX; x <= endX; x += spacing)
-            DrawLineV(topLeft with { X = x }, bottomRight with { X = x }, color);
+            DrawLineV(new Vector2(x, min.Y), new Vector2(x, max.Y), color);
 
         for (var y = startY; y <= endY; y += spacing)
-            DrawLineV(topLeft with { Y = y }, bottomRight with { Y = y }, color);
+            DrawLineV(new Vector2(min.X, y), new Vector2(max.X, y), color);
     }
     
     public static void Shape(List<Vector2> vertices, Color defaultColor, Color failColor) {

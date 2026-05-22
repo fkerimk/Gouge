@@ -50,6 +50,21 @@ internal static class Geometry2D {
         return inside;
     }
 
+    public static bool IsPointInPolygonOrOnEdge(Vector2 point, List<Vector2> vertices) {
+
+        for (var i = 0; i < vertices.Count; i++) {
+            var next = GetNextLoopIndex(i, vertices.Count);
+
+            if (next >= vertices.Count)
+                continue;
+
+            if (DistancePointToSegment(point, vertices[i], vertices[next], out _) <= 0.0001f)
+                return true;
+        }
+
+        return IsPointInPolygon(point, vertices);
+    }
+
     public static float SignedArea(List<Vector2> vertices) {
 
         var area = 0f;

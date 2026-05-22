@@ -217,29 +217,18 @@ internal static partial class Render {
         return tess;
     }
 
-    private static float GetWallDirection(Map map, int partIndex) {
+    private static float GetWallDirection(Map map, int partIndex) =>
+        IsContainedByAnotherPart(map, partIndex)
+            ? -1f
+            : 1f;
 
-        var sample = GetInteriorSample(map.Parts[partIndex].Vertices);
-        var isInsideAnotherPart = map.Parts.Where((_, i) => i != partIndex).Any(t => Geometry2D.IsPointInPolygon(sample, t.Vertices));
+    private static bool IsContainedByAnotherPart(Map map, int partIndex) {
 
-        return isInsideAnotherPart ? -1f : 1f;
-    }
+        var vertices = map.Parts[partIndex].Vertices;
 
-    private static Vector2 GetInteriorSample(List<Vector2> vertices) {
-
-        var tess = Tessellate(vertices);
-
-        if (tess.ElementCount == 0)
-            return vertices[0];
-
-        var a = tess.Vertices[tess.Elements[0]].Position;
-        var b = tess.Vertices[tess.Elements[1]].Position;
-        var c = tess.Vertices[tess.Elements[2]].Position;
-
-        return new Vector2(
-            (a.X + b.X + c.X) / 3f,
-            (a.Y + b.Y + c.Y) / 3f
-        );
+        return map.Parts
+            .Where((_, i) => i != partIndex)
+            .Any(otherPart => vertices.All(vertex => Geometry2D.IsPointInPolygonOrOnEdge(vertex, otherPart.Vertices)));
     }
 
     private static (Vector2 min, Vector2 max) GetBounds(List<Vector2> vertices) {

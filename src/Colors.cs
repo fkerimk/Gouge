@@ -6,6 +6,7 @@ internal static class Colors {
     public static readonly Color Gold   = Color.Gold;
     public static readonly Color Orange = Color.Orange;
     public static readonly Color White  = Color.White;
+    public static readonly Color Ivory  = new(255, 245, 210, 255);
     
     public static readonly Color Background = new( 30,  30,  30, 255);
     public static readonly Color GridBottom = new( 40,  40,  40, 255);

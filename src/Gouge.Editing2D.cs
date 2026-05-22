@@ -4,12 +4,12 @@ using static Raylib_cs.Raylib;
 
 internal static partial class Gouge {
 
-    private static (int part, int vertex) FindHoveredVertex() {
+    private static (int part, int vertex) FindHoveredVertex(int preferredPart = -1) {
 
         var bestDistance = GetVertexSelectDistance();
         var hovered = (-1, -1);
 
-        for (var i = 0; i < Map.Parts.Count; i++) {
+        foreach (var i in GetPartPickOrder2D(preferredPart)) {
 
             var vertices = Map.Parts[i].Vertices;
 
@@ -28,10 +28,31 @@ internal static partial class Gouge {
         return hovered;
     }
 
-    private static (int part, int start, int end, Vector2 point) FindHoveredLine() =>
-        !Map.TryFindLine(_mouseWorldPos, GetLineSelectDistance(), out var point, out var partIndex, out var startIndex, out var endIndex)
-            ? (-1, -1, -1, Vector2.Zero)
-            : (partIndex, startIndex, endIndex, point);
+    private static (int part, int start, int end, Vector2 point) FindHoveredLine(int preferredPart = -1) {
+
+        var bestDistance = GetLineSelectDistance();
+        var hovered = (part: -1, start: -1, end: -1, point: Vector2.Zero);
+
+        foreach (var i in GetPartPickOrder2D(preferredPart)) {
+            var vertices = Map.Parts[i].Vertices;
+
+            if (vertices.Count < 2)
+                continue;
+
+            for (var j = 0; j < vertices.Count; j++) {
+                var next = Geometry2D.GetNextLoopIndex(j, vertices.Count);
+                var distance = Geometry2D.DistancePointToSegment(_mouseWorldPos, vertices[j], vertices[next], out var point);
+
+                if (distance > bestDistance)
+                    continue;
+
+                bestDistance = distance;
+                hovered = (i, j, next, point);
+            }
+        }
+
+        return hovered;
+    }
 
     private static void SelectOrInsertVertex((int part, int vertex) hoveredVertex) {
 
@@ -42,12 +63,15 @@ internal static partial class Gouge {
             return;
         }
 
-        if (!Map.TryFindPointOnLine(_mouseWorldPos, GetLineSelectDistance(), out var point, out var partIndex, out var insertIndex))
+        var hoveredLine = FindHoveredLine(Map.FindPartContaining(_mouseWorldPos));
+
+        if (hoveredLine.part == -1)
             return;
 
-        Map.InsertVertex(partIndex, insertIndex, point);
-        _selectedVertex = (partIndex, insertIndex);
-        _activePart = partIndex;
+        var insertIndex = hoveredLine.start + 1;
+        Map.InsertVertex(hoveredLine.part, insertIndex, hoveredLine.point);
+        _selectedVertex = (hoveredLine.part, insertIndex);
+        _activePart = hoveredLine.part;
     }
 
     private static void DrawParts((int part, int vertex) hoveredVertex, (int part, int start, int end, Vector2 point) hoveredLine, int hoveredPart) {
@@ -87,7 +111,7 @@ internal static partial class Gouge {
 
     private static void Handle2DEditing(ref (int part, int vertex) hoveredVertex, ref (int part, int start, int end, Vector2 point) hoveredLine, ref int hoveredPart, ref Vector2? previewVertex) {
 
-        if (_io.WantCaptureMouse || _selectedVertex != (-1, -1) || _selectedLine.HasValue || _selectedPart.HasValue)
+        if (_io.WantCaptureMouse || _selectedVertex != (-1, -1) || _selectedLine.HasValue || _selectedPart.HasValue || HasPending3DDrag())
             return;
 
         if (_rectStart.HasValue) {
@@ -104,7 +128,7 @@ internal static partial class Gouge {
         if (canInsertVertex)
             previewVertex = hoveredLine.point;
 
-        if (IsMouseButtonDown(MouseButton.Right) && hoveredVertex != (-1, -1)) {
+        if (ShouldDeleteVertexOnRightRelease() && hoveredVertex != (-1, -1)) {
 
             if (_activePart == hoveredVertex.part && Map.Parts[hoveredVertex.part].Vertices.Count <= 3)
                 _activePart = -1;
@@ -118,12 +142,8 @@ internal static partial class Gouge {
             return;
 
         if (hoveredVertex != (-1, -1)) {
-            SelectOrInsertVertex(hoveredVertex);
-            return;
-        }
-
-        if (hoveredPart != -1 && !IsKeyDown(KeyboardKey.LeftShift)) {
-            TrySelectPart(hoveredPart);
+            if (_mode3D) QueueVertexDrag3D(hoveredVertex);
+            else SelectOrInsertVertex(hoveredVertex);
             return;
         }
 
@@ -135,14 +155,24 @@ internal static partial class Gouge {
         if (hoveredLine.part != -1 && TrySelectLine(hoveredLine))
             return;
 
+        if (hoveredPart != -1 && !IsKeyDown(KeyboardKey.LeftShift)) {
+            TrySelectPart(hoveredPart);
+            return;
+        }
+
         _rectStart = Snap(_mouseWorldPos);
         _rectParentPart = hoveredPart;
     }
 
     private static bool TrySelectLine((int part, int start, int end, Vector2 point) hoveredLine) {
 
+        if (_mode3D) {
+            QueueLineDrag3D(hoveredLine);
+            return true;
+        }
+
         var vertices = Map.Parts[hoveredLine.part].Vertices;
-        var mouseStart = Snap(_mouseWorldPos);
+        var mouseStart = GetSelectionStartPoint(hoveredLine.part);
 
         _selectedLine = (
             (hoveredLine.part, hoveredLine.start, hoveredLine.end),
@@ -157,10 +187,15 @@ internal static partial class Gouge {
 
     private static void TrySelectPart(int hoveredPart) {
 
+        if (_mode3D) {
+            QueuePartDrag3D(hoveredPart);
+            return;
+        }
+
         _activePart = hoveredPart;
         _selectedPart = (
             hoveredPart,
-            Snap(_mouseWorldPos),
+            GetSelectionStartPoint(hoveredPart),
             Map.Parts[hoveredPart].Vertices.ToList()
         );
     }
@@ -168,6 +203,32 @@ internal static partial class Gouge {
     private static float GetVertexSelectDistance() => VertexSelectPixels / Render.Cam2D.Zoom;
 
     private static float GetLineSelectDistance() => LineSelectPixels / Render.Cam2D.Zoom;
+
+    private static IEnumerable<int> GetPartPickOrder2D(int preferredPart) {
+
+        if (preferredPart != -1) {
+            yield return preferredPart;
+            yield break;
+        }
+
+        if (_activePart != -1 && _activePart < Map.Parts.Count)
+            yield return _activePart;
+
+        for (var i = 0; i < Map.Parts.Count; i++) {
+            if (i != _activePart)
+                yield return i;
+        }
+    }
+
+    private static bool ShouldDeleteVertexOnRightRelease() {
+
+        if (!IsMouseButtonReleased(MouseButton.Right))
+            return false;
+
+        var shouldDelete = !_rightMouseDragged;
+        _rightMouseDragged = false;
+        return shouldDelete;
+    }
 
     private static void FinishRectCreate() {
 
