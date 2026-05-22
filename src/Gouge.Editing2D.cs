@@ -226,8 +226,9 @@ internal static partial class Gouge {
         if (!IsMouseButtonReleased(MouseButton.Right))
             return false;
 
-        var shouldDelete = !_rightMouseDragged;
+        var shouldDelete = !_rightMouseDragged && !_rightMouseUsedForCamera;
         _rightMouseDragged = false;
+        _rightMouseUsedForCamera = false;
         return shouldDelete;
     }
 

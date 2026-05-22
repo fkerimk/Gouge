@@ -39,11 +39,27 @@ internal static partial class Gouge {
     private static Vector2 LerpTo(Vector2 current, Vector2 target) => Vector2.Lerp(current, target, LerpFactor());
 
     private static void UpdateCamera3D() {
+
+        if (IsMouseButtonPressed(MouseButton.Right)) {
+            _rightMousePressPos = GetMousePosition();
+            _rightMouseDragged = false;
+            _rightMouseUsedForCamera = false;
+        }
         
         if (!_io.WantCaptureMouse && IsMouseButtonDown(MouseButton.Right)) {
 
+            var mouseScreen = GetMousePosition();
+
+            if (!_rightMouseDragged && Vector2.Distance(mouseScreen, _rightMousePressPos) >= RightDragThreshold) {
+                _rightMouseDragged = true;
+                _rightMouseUsedForCamera = true;
+            }
+
             var mouseDelta = GetMouseDelta();
-                
+
+            if (mouseDelta != Vector2.Zero)
+                _rightMouseUsedForCamera = true;
+
             _camera3DYaw += mouseDelta.X * Camera3DMouseSensitivity;
             _camera3DPitch = Math.Clamp(_camera3DPitch - mouseDelta.Y * Camera3DMouseSensitivity, -Camera3DPitchLimit, Camera3DPitchLimit);
             Sync2DRotationWith3D();
@@ -91,16 +107,20 @@ internal static partial class Gouge {
         if (IsMouseButtonPressed(MouseButton.Right)) {
             _rightMousePressPos = mouseScreen;
             _rightMouseDragged = false;
+            _rightMouseUsedForCamera = false;
             _camera2DRotationDragRaw = Render.Cam2D.Rotation;
         }
 
         if (IsMouseButtonDown(MouseButton.Right)) {
-            if (!_rightMouseDragged && Vector2.Distance(mouseScreen, _rightMousePressPos) >= RightDragThreshold)
+            if (!_rightMouseDragged && Vector2.Distance(mouseScreen, _rightMousePressPos) >= RightDragThreshold) {
                 _rightMouseDragged = true;
+                _rightMouseUsedForCamera = true;
+            }
 
             var mouseDelta = GetMouseDelta();
 
             if (mouseDelta.X != 0f) {
+                _rightMouseUsedForCamera = true;
                 _camera2DRotationDragRaw -= mouseDelta.X * Camera2DRotationSensitivity;
 
                 var targetRotation =

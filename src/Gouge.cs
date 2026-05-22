@@ -29,6 +29,7 @@ internal static partial class Gouge {
     private static Vector2 _mouseWorldPos;
     private static Vector2 _rightMousePressPos;
     private static bool _rightMouseDragged;
+    private static bool _rightMouseUsedForCamera;
     private static (int part, int vertex, Vector2 screenStart)? _pendingVertex3D;
     private static ((int part, int start, int end, Vector2 point) line, Vector2 screenStart)? _pendingLine3D;
     private static (int part, Vector2 screenStart)? _pendingPart3D;
