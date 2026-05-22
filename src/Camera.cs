@@ -23,6 +23,7 @@ internal static partial class Gouge {
     private static Vector2 _camera2DZoomAnchorWorld;
     private static Vector2 _camera2DZoomAnchorScreen;
     private static bool _camera2DHasZoomAnchor;
+    private static float _camera2DRotationDragRaw;
 
     private static void UpdateCamera() {
 
@@ -90,6 +91,7 @@ internal static partial class Gouge {
         if (IsMouseButtonPressed(MouseButton.Right)) {
             _rightMousePressPos = mouseScreen;
             _rightMouseDragged = false;
+            _camera2DRotationDragRaw = Render.Cam2D.Rotation;
         }
 
         if (IsMouseButtonDown(MouseButton.Right)) {
@@ -99,7 +101,14 @@ internal static partial class Gouge {
             var mouseDelta = GetMouseDelta();
 
             if (mouseDelta.X != 0f) {
-                Render.Cam2D.Rotation -= mouseDelta.X * Camera2DRotationSensitivity;
+                _camera2DRotationDragRaw -= mouseDelta.X * Camera2DRotationSensitivity;
+
+                var targetRotation =
+                    IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift)
+                        ? MathF.Round(_camera2DRotationDragRaw / 45f) * 45f
+                        : _camera2DRotationDragRaw;
+
+                RotateCamera2DAroundScreenPoint(targetRotation, mouseScreen);
                 Sync3DRotationWith2D();
             }
         }
@@ -140,6 +149,14 @@ internal static partial class Gouge {
             _camera2DHasZoomAnchor = false;
 
         _camera3DDesiredTarget = Render.Cam2D.Target;
+    }
+
+    private static void RotateCamera2DAroundScreenPoint(float targetRotation, Vector2 screenPoint) {
+
+        var anchorWorldBefore = GetScreenToWorld2D(screenPoint, Render.Cam2D);
+        Render.Cam2D.Rotation = targetRotation;
+        var anchorWorldAfter = GetScreenToWorld2D(screenPoint, Render.Cam2D);
+        Render.Cam2D.Target += anchorWorldBefore - anchorWorldAfter;
     }
 
     private static void Sync2DRotationWith3D() =>
