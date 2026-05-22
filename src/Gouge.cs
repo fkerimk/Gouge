@@ -81,6 +81,7 @@ internal static partial class Gouge {
             MoveSelectedPart();
             
             UpdateCamera();
+            HandleActivePartKeyboardEdit();
             
             BeginDrawing();
             ClearBackground(Colors.Background);
@@ -199,6 +200,195 @@ internal static partial class Gouge {
 
     private static bool IsHistoryShortcutPressed(KeyboardKey key) =>
         IsKeyPressed(key) || IsKeyPressedRepeat(key);
+
+    private static void HandleActivePartKeyboardEdit() {
+
+        if (_io.WantCaptureKeyboard || _activePart < 0 || _activePart >= Map.Parts.Count)
+            return;
+
+        if (_selectedVertex != (-1, -1) || _selectedLine.HasValue || _selectedPart.HasValue || _rectStart.HasValue || HasPending3DDrag())
+            return;
+
+        if (IsKeyPressed(KeyboardKey.Delete)) {
+            DeleteActivePart();
+            return;
+        }
+
+        var step = IsKeyDown(KeyboardKey.LeftAlt) || IsKeyDown(KeyboardKey.RightAlt) ? 0.1f : 1f;
+        var moved = _mode3D
+            ? TryMoveActivePart3D(step)
+            : TryMoveActivePart2D(step);
+
+        if (moved)
+            RecordHistorySnapshot();
+    }
+
+    private static bool TryMoveActivePart2D(float step) {
+
+        var keyMove = GetArrowKeyDirection();
+
+        if (keyMove == Vector2.Zero)
+            return false;
+
+        var pivot = GetActivePartCenter2D(_activePart);
+        var right = GetScreenAlignedAxis2D(pivot, new Vector2(1f, 0f));
+        var up = GetScreenAlignedAxis2D(pivot, new Vector2(0f, -1f));
+        var planarMove = right * keyMove.X + up * keyMove.Y;
+
+        if (planarMove == Vector2.Zero)
+            return false;
+
+        TranslatePart(_activePart, planarMove * step, 0f);
+        return true;
+    }
+
+    private static bool TryMoveActivePart3D(float step) {
+
+        var keyMove = GetArrowKeyDirection();
+
+        if (keyMove == Vector2.Zero)
+            return false;
+
+        var pivot = GetActivePartCenter(_activePart);
+        var right = GetScreenAlignedAxis3D(pivot, new Vector2(1f, 0f));
+        var up = GetScreenAlignedAxis3D(pivot, new Vector2(0f, -1f));
+        var worldMove = right * keyMove.X + up * keyMove.Y;
+
+        if (worldMove == Vector3.Zero)
+            return false;
+
+        TranslatePart(_activePart, new Vector2(worldMove.X, worldMove.Z) * step, worldMove.Y * step);
+        return true;
+    }
+
+    private static Vector2 GetActivePartCenter2D(int partIndex) {
+
+        var part = Map.Parts[partIndex];
+        var sum = Vector2.Zero;
+
+        foreach (var vertex in part.Vertices)
+            sum += vertex;
+
+        return sum / part.Vertices.Count;
+    }
+
+    private static Vector3 GetActivePartCenter(int partIndex) {
+
+        var part = Map.Parts[partIndex];
+        var sum = Vector2.Zero;
+
+        foreach (var vertex in part.Vertices)
+            sum += vertex;
+
+        var planar = sum / part.Vertices.Count;
+        return new Vector3(planar.X, part.YOffset + part.Height * 0.5f, planar.Y);
+    }
+
+    private static Vector2 GetScreenAlignedAxis2D(Vector2 pivot, Vector2 desiredScreenDirection) {
+
+        var pivotScreen = GetWorldToScreen2D(pivot, Render.Cam2D);
+        var candidates = new[] {
+            Vector2.UnitX,
+            -Vector2.UnitX,
+            Vector2.UnitY,
+            -Vector2.UnitY,
+        };
+
+        var bestAxis = Vector2.Zero;
+        var bestScore = float.NegativeInfinity;
+
+        foreach (var axis in candidates) {
+            var candidateScreen = GetWorldToScreen2D(pivot + axis, Render.Cam2D);
+            var screenDelta = candidateScreen - pivotScreen;
+
+            if (screenDelta == Vector2.Zero)
+                continue;
+
+            var score = Vector2.Dot(Vector2.Normalize(screenDelta), desiredScreenDirection);
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestAxis = axis;
+            }
+        }
+
+        return bestAxis;
+    }
+
+    private static Vector3 GetScreenAlignedAxis3D(Vector3 pivot, Vector2 desiredScreenDirection) {
+
+        var pivotScreen = GetWorldToScreen(pivot, Render.Cam3D);
+        var candidates = new[] {
+            Vector3.UnitX,
+            -Vector3.UnitX,
+            Vector3.UnitY,
+            -Vector3.UnitY,
+            Vector3.UnitZ,
+            -Vector3.UnitZ,
+        };
+
+        var bestAxis = Vector3.Zero;
+        var bestScore = float.NegativeInfinity;
+
+        foreach (var axis in candidates) {
+            var candidateScreen = GetWorldToScreen(pivot + axis, Render.Cam3D);
+            var screenDelta = candidateScreen - pivotScreen;
+
+            if (screenDelta == Vector2.Zero)
+                continue;
+
+            var score = Vector2.Dot(Vector2.Normalize(screenDelta), desiredScreenDirection);
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestAxis = axis;
+            }
+        }
+
+        return bestAxis;
+    }
+
+    private static Vector2 GetArrowKeyDirection() {
+
+        var direction = Vector2.Zero;
+
+        if (IsKeyPressed(KeyboardKey.Left) || IsKeyPressedRepeat(KeyboardKey.Left))
+            direction.X--;
+
+        if (IsKeyPressed(KeyboardKey.Right) || IsKeyPressedRepeat(KeyboardKey.Right))
+            direction.X++;
+
+        if (IsKeyPressed(KeyboardKey.Up) || IsKeyPressedRepeat(KeyboardKey.Up))
+            direction.Y++;
+
+        if (IsKeyPressed(KeyboardKey.Down) || IsKeyPressedRepeat(KeyboardKey.Down))
+            direction.Y--;
+
+        return direction == Vector2.Zero ? direction : Vector2.Normalize(direction);
+    }
+
+    private static void TranslatePart(int partIndex, Vector2 planarDelta, float yDelta) {
+
+        var part = Map.Parts[partIndex];
+
+        for (var i = 0; i < part.Vertices.Count; i++)
+            part.Vertices[i] += planarDelta;
+
+        part.YOffset += yDelta;
+    }
+
+    private static void DeleteActivePart() {
+
+        Map.Parts.RemoveAt(_activePart);
+        ClearActiveEditState();
+
+        if (Map.Parts.Count == 0)
+            _activePart = -1;
+        else if (_activePart >= Map.Parts.Count)
+            _activePart = Map.Parts.Count - 1;
+
+        RecordHistorySnapshot();
+    }
 
     private static void RecordHistorySnapshot() {
 
@@ -339,7 +529,8 @@ internal static partial class Gouge {
             return;
 
         var part = Map.Parts[_activePart];
-        var delta = wheel * 0.25f;
+        var step = IsKeyDown(KeyboardKey.LeftAlt) || IsKeyDown(KeyboardKey.RightAlt) ? 0.1f : 1f;
+        var delta = wheel * step;
 
         if (IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift))
             part.YOffset += delta;
