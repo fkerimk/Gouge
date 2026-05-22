@@ -2,27 +2,13 @@ using Raylib_cs;
 using static Raylib_cs.Raylib;
 
 internal static class Resources {
-    
+
+    private const string ResourceRootDirectoryName = "res";
     private static readonly Dictionary<string, object> Library = [];
     private static readonly Dictionary<string, string[]> FileLists = [];
-    
+
     public static string FindResourceFile(params string[] relativePathParts) {
-
-        relativePathParts = relativePathParts.Prepend("Resources").ToArray();
-        
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (current is not null) {
-
-            var candidate = Path.Combine([current.FullName, .. relativePathParts]);
-
-            if (File.Exists(candidate))
-                return candidate;
-
-            current = current.Parent;
-        }
-
-        throw new FileNotFoundException($"Resource not found: {Path.Combine(relativePathParts)}");
+        return FindResourcePath(File.Exists, "Resource", relativePathParts);
     }
 
     public static T GetResource<T>(params string[] relativePathParts) {
@@ -94,41 +80,40 @@ internal static class Resources {
         return files;
     }
 
-    public static string FindResourceDirectory(params string[] relativePathParts) {
-
-        relativePathParts = relativePathParts.Prepend("Resources").ToArray();
-
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (current is not null) {
-
-            var candidate = Path.Combine([current.FullName, .. relativePathParts]);
-
-            if (Directory.Exists(candidate))
-                return candidate;
-
-            current = current.Parent;
-        }
-
-        throw new DirectoryNotFoundException($"Resource directory not found: {Path.Combine(relativePathParts)}");
+    private static string FindResourceDirectory(params string[] relativePathParts) {
+        return FindResourcePath(Directory.Exists, "Resource directory", relativePathParts);
     }
 
     public static bool HasResourceFile(params string[] relativePathParts) {
+        return TryFindResourcePath(File.Exists, relativePathParts, out _);
+    }
 
-        relativePathParts = relativePathParts.Prepend("Resources").ToArray();
+    private static string FindResourcePath(Func<string, bool> exists, string label, params string[] relativePathParts) {
 
+        if (TryFindResourcePath(exists, relativePathParts, out var path))
+            return path;
+
+        throw new FileNotFoundException($"{label} not found: {Path.Combine([ResourceRootDirectoryName, .. relativePathParts])}");
+    }
+
+    private static bool TryFindResourcePath(Func<string, bool> exists, string[] relativePathParts, out string path) {
+
+        var pathParts = relativePathParts.Prepend(ResourceRootDirectoryName).ToArray();
         var current = new DirectoryInfo(AppContext.BaseDirectory);
 
         while (current is not null) {
 
-            var candidate = Path.Combine([current.FullName, .. relativePathParts]);
+            var candidate = Path.Combine([current.FullName, .. pathParts]);
 
-            if (File.Exists(candidate))
+            if (exists(candidate)) {
+                path = candidate;
                 return true;
+            }
 
             current = current.Parent;
         }
 
+        path = string.Empty;
         return false;
     }
 }

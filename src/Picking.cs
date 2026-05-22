@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-public static class Picking {
+internal static class Picking {
 
     public static bool TryRaycastPart(Map map, Ray ray, out int partIndex, out float distance) {
 
@@ -60,7 +60,7 @@ public static class Picking {
         var hitPoint = ray.Position + ray.Direction * distance;
         var point2D = new Vector2(hitPoint.X, hitPoint.Z);
 
-        if (!Util.IsPointInPolygon(point2D, vertices))
+        if (!Geometry2D.IsPointInPolygon(point2D, vertices))
             return false;
 
         bestDistance = distance;

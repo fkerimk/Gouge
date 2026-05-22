@@ -1,6 +1,6 @@
 using System.Numerics;
 
-public static class WallGeometry {
+internal static class WallGeometry {
 
     public static List<WallFaceSegment> GetVisibleWallFaces(Map map, int currentPartIndex, Vector2 edgeStart, Vector2 edgeEnd, float currentBottom, float currentTop) {
 
@@ -14,13 +14,11 @@ public static class WallGeometry {
 
         for (var partIndex = 0; partIndex < map.Parts.Count; partIndex++) {
 
-            var part = map.Parts[partIndex];
-            var vertices = part.Vertices;
+                var part = map.Parts[partIndex];
+                var vertices = part.Vertices;
 
             for (var vertexIndex = 0; vertexIndex < vertices.Count; vertexIndex++) {
-
-                if (!Util.TryGetNextVertexIndex(vertices, vertexIndex, out var nextIndex))
-                    continue;
+                var nextIndex = Geometry2D.GetNextLoopIndex(vertexIndex, vertices.Count);
 
                 if (partIndex == currentPartIndex && vertices[vertexIndex] == edgeStart && vertices[nextIndex] == edgeEnd)
                     continue;
@@ -106,10 +104,10 @@ public static class WallGeometry {
         var delta = edgeEnd - edgeStart;
         var otherDelta = otherEnd - otherStart;
 
-        if (MathF.Abs(Cross(delta, otherDelta)) > epsilon)
+        if (MathF.Abs(Geometry2D.Cross(delta, otherDelta)) > epsilon)
             return false;
 
-        if (MathF.Abs(Cross(delta, otherStart - edgeStart)) > epsilon || MathF.Abs(Cross(delta, otherEnd - edgeStart)) > epsilon)
+        if (MathF.Abs(Geometry2D.Cross(delta, otherStart - edgeStart)) > epsilon || MathF.Abs(Geometry2D.Cross(delta, otherEnd - edgeStart)) > epsilon)
             return false;
 
         var t0 = Vector2.Dot(otherStart - edgeStart, delta) / lengthSquared;
@@ -123,9 +121,6 @@ public static class WallGeometry {
         overlap = (from, to);
         return true;
     }
-
-    private static float Cross(Vector2 a, Vector2 b) => a.X * b.Y - a.Y * b.X;
-
     private readonly record struct EdgeOverlap(float From, float To, float Bottom, float Top);
     private readonly record struct VerticalRange(float Bottom, float Top);
 }

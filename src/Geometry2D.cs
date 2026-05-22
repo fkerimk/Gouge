@@ -1,25 +1,21 @@
 using System.Numerics;
 using Raylib_cs;
-using static Raylib_cs.Raylib;
 
-public static class Util {
+internal static class Geometry2D {
 
-    public static Vector2 ScreenToWorld(Vector2 pos, Camera2D cam) => GetScreenToWorld2D(pos, cam);
-    public static Ray ScreenToWorld(Vector2 pos, Camera3D cam) => GetScreenToWorldRay(pos, cam);
-    
     public static float Distance(Vector2 a, Vector2 b) => Raymath.Vector2Distance(a, b);
-    
-    public static float Dot(Vector2 a, Vector2 b) => Raymath.Vector2DotProduct(a, b);
-    
+
+    private static float Dot(Vector2 a, Vector2 b) => Raymath.Vector2DotProduct(a, b);
+
     public static float Cross(Vector2 a, Vector2 b) => a.X * b.Y - a.Y * b.X;
-    
+
     public static float DistancePointToSegment(Vector2 point, Vector2 a, Vector2 b, out Vector2 closestPoint) {
-        
+
         var ab = b - a;
         var lengthSquared = Dot(ab, ab);
 
         if (lengthSquared <= float.Epsilon) {
-            
+
             closestPoint = a;
             return Distance(point, a);
         }
@@ -28,31 +24,13 @@ public static class Util {
         t = Math.Clamp(t, 0f, 1f);
 
         closestPoint = a + ab * t;
-
         return Distance(point, closestPoint);
     }
-    
-    public static bool TryFindPointOnLine(Vector2 targetPoint, Vector2 lineStart, Vector2 lineEnd, float selectDistance, out Vector2 point ) {
-        
-        point = Vector2.Zero;
 
-        var distance = DistancePointToSegment(targetPoint, lineStart, lineEnd, out var closestPoint );
-
-        if (distance > selectDistance) return false;
-
-        point = closestPoint;
-        
-        return true;
-    }
-
-    public static bool TryGetNextVertexIndex(List<Vector2> vertices, int index, out int next) {
-        
-        next = index + 1;
-        if (next < vertices.Count || vertices.Count <= 2) return true;
-        next = 0;
-        
-        return true;
-    }
+    public static int GetNextLoopIndex(int index, int count) =>
+        index + 1 < count || count <= 2
+            ? index + 1
+            : 0;
 
     public static bool IsPointInPolygon(Vector2 point, List<Vector2> vertices) {
 
@@ -71,4 +49,24 @@ public static class Util {
 
         return inside;
     }
+
+    public static float SignedArea(List<Vector2> vertices) {
+
+        var area = 0f;
+
+        for (var i = 0; i < vertices.Count; i++) {
+            var current = vertices[i];
+            var next = vertices[(i + 1) % vertices.Count];
+            area += current.X * next.Y - next.X * current.Y;
+        }
+
+        return area * 0.5f;
+    }
+
+    public static List<Vector2> CreateRectangleVertices(Vector2 min, Vector2 max) => [
+        new(min.X, min.Y),
+        new(min.X, max.Y),
+        new(max.X, max.Y),
+        new(max.X, min.Y)
+    ];
 }

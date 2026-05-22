@@ -7,10 +7,10 @@ internal static partial class Gouge {
 
         _hoveredPart3D = -1;
 
-        if (Io.WantCaptureMouse)
+        if (_io.WantCaptureMouse)
             return;
 
-        var ray = Util.ScreenToWorld(GetMousePosition(), Render.Cam3D);
+        var ray = RaylibUtil.ScreenToWorld(GetMousePosition(), Render.Cam3D);
 
         if (Picking.TryRaycastPart(Map, ray, out var partIndex, out _))
             _hoveredPart3D = partIndex;

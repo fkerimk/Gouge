@@ -1,4 +1,4 @@
-public class Map {
+internal class Map {
 
     public readonly List<Part> Parts = [];
 }

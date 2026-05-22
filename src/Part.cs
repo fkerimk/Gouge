@@ -1,6 +1,6 @@
 using System.Numerics;
 
-public class Part {
+internal class Part {
 
     public readonly List<Vector2> Vertices = [];
     

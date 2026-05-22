@@ -73,7 +73,7 @@ internal static partial class Render {
     
     public static void Line(Vector2 start, Vector2 end, Color color) => DrawLineV(start, end, color);
 
-    public static void Rectangle(Color color, Vector2 pos, Vector2 size, float roundness = 0) {
+    private static void Rectangle(Color color, Vector2 pos, Vector2 size, float roundness = 0) {
 
         var rect = new Rectangle(pos, size);
         

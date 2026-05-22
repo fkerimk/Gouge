@@ -1,7 +1,7 @@
 using System.Numerics;
 using Raylib_cs;
 
-public class Surface(string texture) {
+internal class Surface(string texture) {
 
     public string Texture = texture;
     public TileMode Mode;
@@ -10,7 +10,7 @@ public class Surface(string texture) {
     public Vector2 Offset = Vector2.Zero;
 }
 
-public enum TileMode {
+internal enum TileMode {
     
     World,
     Local,

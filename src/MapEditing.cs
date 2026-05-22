@@ -1,6 +1,6 @@
 using System.Numerics;
 
-public static class MapEditing {
+internal static class MapEditing {
 
     extension(Map map) {
         
@@ -21,9 +21,9 @@ public static class MapEditing {
             map.Parts[part].Vertices.Insert(index, point);
         }
 
-        public bool TryFindPointOnLine(float selectDistance, out Vector2 point, out int partIndex, out int insertIndex) {
+        public bool TryFindPointOnLine(Vector2 targetPoint, float selectDistance, out Vector2 point, out int partIndex, out int insertIndex) {
 
-            if (!map.TryFindLine(selectDistance, out point, out partIndex, out var startIndex, out _)) {
+            if (!map.TryFindLine(targetPoint, selectDistance, out point, out partIndex, out var startIndex, out _)) {
                 insertIndex = -1;
                 return false;
             }
@@ -33,10 +33,10 @@ public static class MapEditing {
             return true;
         }
 
-        public bool TryFindPointOnLine(out Vector2 point, out int partIndex, out int insertIndex) =>
-            map.TryFindPointOnLine(float.PositiveInfinity, out point, out partIndex, out insertIndex);
+        public bool TryFindPointOnLine(Vector2 targetPoint, out Vector2 point, out int partIndex, out int insertIndex) =>
+            map.TryFindPointOnLine(targetPoint, float.PositiveInfinity, out point, out partIndex, out insertIndex);
 
-        public bool TryFindLine(float selectDistance, out Vector2 point, out int partIndex, out int startIndex, out int endIndex) {
+        public bool TryFindLine(Vector2 targetPoint, float selectDistance, out Vector2 point, out int partIndex, out int startIndex, out int endIndex) {
 
             point = Vector2.Zero;
             partIndex = -1;
@@ -52,11 +52,9 @@ public static class MapEditing {
                     continue;
 
                 for (var j = 0; j < vertices.Count; j++) {
+                    var next = Geometry2D.GetNextLoopIndex(j, vertices.Count);
 
-                    if (!Util.TryGetNextVertexIndex(vertices, j, out var next))
-                        continue;
-
-                    var distance = Util.DistancePointToSegment(Gouge.MouseWorldPos, vertices[j], vertices[next], out var closestPoint);
+                    var distance = Geometry2D.DistancePointToSegment(targetPoint, vertices[j], vertices[next], out var closestPoint);
 
                     if (distance > selectDistance || distance >= bestDistance)
                         continue;
@@ -72,8 +70,8 @@ public static class MapEditing {
             return partIndex != -1;
         }
 
-        public bool TryFindLine(out Vector2 point, out int partIndex, out int startIndex, out int endIndex) =>
-            map.TryFindLine(float.PositiveInfinity, out point, out partIndex, out startIndex, out endIndex);
+        public bool TryFindLine(Vector2 targetPoint, out Vector2 point, out int partIndex, out int startIndex, out int endIndex) =>
+            map.TryFindLine(targetPoint, float.PositiveInfinity, out point, out partIndex, out startIndex, out endIndex);
 
         public int FindPartContaining(Vector2 point, int ignorePart = -1) {
 
@@ -82,7 +80,7 @@ public static class MapEditing {
                 if (i == ignorePart)
                     continue;
 
-                if (Util.IsPointInPolygon(point, map.Parts[i].Vertices))
+                if (Geometry2D.IsPointInPolygon(point, map.Parts[i].Vertices))
                     return i;
             }
 

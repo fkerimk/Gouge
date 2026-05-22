@@ -21,7 +21,7 @@ internal static partial class Gouge {
 
     private static void UpdateCamera3D() {
         
-        if (!Io.WantCaptureMouse && IsMouseButtonDown(MouseButton.Right)) {
+        if (!_io.WantCaptureMouse && IsMouseButtonDown(MouseButton.Right)) {
 
             var mouseDelta = GetMouseDelta();
                 
@@ -59,7 +59,7 @@ internal static partial class Gouge {
 
     private static void UpdateCamera2D() {
         
-        if (Io.WantCaptureMouse)
+        if (_io.WantCaptureMouse)
             return;
 
         if (IsMouseButtonDown(MouseButton.Middle))
@@ -67,7 +67,7 @@ internal static partial class Gouge {
 
         if (GetMouseWheelMove() == 0) return;
 
-        var mouseWorldBeforeZoom = MouseWorldPos;
+        var mouseWorldBeforeZoom = _mouseWorldPos;
 
         Render.Cam2D.Zoom += GetMouseWheelMove() * Render.Cam2D.Zoom / 2f;
         Render.Cam2D.Zoom = MathF.Max(Render.Cam2D.Zoom, 2f);

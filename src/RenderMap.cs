@@ -113,7 +113,7 @@ internal static partial class Render {
         
         using var buffer = new ArrayPoolBufferWriter<VertexData>(vertices.Count * 18);
         
-        var inward = MathF.Sign(SignedArea(vertices)) * wallDirection;
+        var inward = MathF.Sign(Geometry2D.SignedArea(vertices)) * wallDirection;
         var bottom = part.YOffset;
         var top = part.YOffset + part.Height;
 
@@ -220,7 +220,7 @@ internal static partial class Render {
     private static float GetWallDirection(Map map, int partIndex) {
 
         var sample = GetInteriorSample(map.Parts[partIndex].Vertices);
-        var isInsideAnotherPart = map.Parts.Where((_, i) => i != partIndex).Any(t => Util.IsPointInPolygon(sample, t.Vertices));
+        var isInsideAnotherPart = map.Parts.Where((_, i) => i != partIndex).Any(t => Geometry2D.IsPointInPolygon(sample, t.Vertices));
 
         return isInsideAnotherPart ? -1f : 1f;
     }
@@ -240,19 +240,6 @@ internal static partial class Render {
             (a.X + b.X + c.X) / 3f,
             (a.Y + b.Y + c.Y) / 3f
         );
-    }
-
-    private static float SignedArea(List<Vector2> vertices) {
-
-        var area = 0f;
-
-        for (var i = 0; i < vertices.Count; i++) {
-            var current = vertices[i];
-            var next = vertices[(i + 1) % vertices.Count];
-            area += current.X * next.Y - next.X * current.Y;
-        }
-
-        return area * 0.5f;
     }
 
     private static (Vector2 min, Vector2 max) GetBounds(List<Vector2> vertices) {
