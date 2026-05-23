@@ -147,10 +147,10 @@ internal static partial class Render {
         var bottomEnd = new Vector3(end.X, bottom, end.Y);
         var topStart = new Vector3(start.X, top, start.Y);
         var topEnd = new Vector3(end.X, top, end.Y);
-        var uvBottomStart = GetWallUv(start, end, bottom, top, bottom, surface);
-        var uvBottomEnd = GetWallUv(start, end, bottom, top, bottom, surface, true);
-        var uvTopStart = GetWallUv(start, end, bottom, top, top, surface);
-        var uvTopEnd = GetWallUv(start, end, bottom, top, top, surface, true);
+        var uvBottomStart = GetWallUv(start, end, start, bottom, bottom, top, surface);
+        var uvBottomEnd = GetWallUv(start, end, end, bottom, bottom, top, surface);
+        var uvTopStart = GetWallUv(start, end, start, top, bottom, top, surface);
+        var uvTopEnd = GetWallUv(start, end, end, top, bottom, top, surface);
 
         if (inward > 0f) {
             WriteTriangle(buffer, normal, (bottomStart, uvBottomStart), (topEnd, uvTopEnd), (topStart, uvTopStart));
@@ -261,9 +261,9 @@ internal static partial class Render {
         return ApplySurfaceTransform(uv, surface);
     }
 
-    private static Vector2 GetWallUv(Vector2 segmentStart, Vector2 segmentEnd, float bottom, float top, float verticalPosition, Surface surface, bool useEnd = false) {
+    private static Vector2 GetWallUv(Vector2 segmentStart, Vector2 segmentEnd, Vector2 point, float verticalPosition, float bottom, float top, Surface surface) {
 
-        var horizontalDistance = useEnd ? Vector2.Distance(segmentStart, segmentEnd) : 0f;
+        var horizontalDistance = Vector2.Distance(segmentStart, point);
         var verticalDistance = top - verticalPosition;
 
         var uv = surface.Mode switch {
@@ -274,10 +274,25 @@ internal static partial class Render {
                 NormalizeToBounds(verticalDistance, 0f, top - bottom)
             ),
             
-            _ => new Vector2(horizontalDistance, verticalDistance),
+            _ => GetWorldWallUv(segmentStart, segmentEnd, point, verticalPosition),
         };
 
         return ApplySurfaceTransform(uv, surface);
+    }
+
+    private static Vector2 GetWorldWallUv(Vector2 segmentStart, Vector2 segmentEnd, Vector2 point, float verticalPosition) {
+
+        var tangent = segmentEnd - segmentStart;
+
+        if (tangent.LengthSquared() <= float.Epsilon)
+            return new Vector2(0f, -verticalPosition);
+
+        tangent = Vector2.Normalize(tangent);
+
+        if (tangent.X < 0f || (MathF.Abs(tangent.X) <= float.Epsilon && tangent.Y < 0f))
+            tangent = -tangent;
+
+        return new Vector2(Vector2.Dot(point, tangent), -verticalPosition);
     }
 
     private static float NormalizeToBounds(float value, float min, float max) {
