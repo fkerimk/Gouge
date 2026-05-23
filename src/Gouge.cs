@@ -221,8 +221,15 @@ internal static partial class Gouge {
             return;
         }
 
+        var ctrl = IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl);
+
         if (_activePart < 0 || _activePart >= Map.Parts.Count)
             return;
+
+        if (ctrl && IsKeyPressed(KeyboardKey.D)) {
+            DuplicateActivePart();
+            return;
+        }
 
         if (IsKeyPressed(KeyboardKey.Delete)) {
             DeleteActivePart();
@@ -231,7 +238,6 @@ internal static partial class Gouge {
 
         var step = IsKeyDown(KeyboardKey.LeftAlt) || IsKeyDown(KeyboardKey.RightAlt) ? 0.1f : 1f;
         var shift = IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift);
-        var ctrl = IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl);
         var moved = shift
             ? (_mode3D ? TryEditActivePartVertices3D(step, ctrl) : TryEditActivePartVertices2D(step, ctrl))
             : (_mode3D ? TryMoveActivePart3D(step) : TryMoveActivePart2D(step));
@@ -624,6 +630,15 @@ internal static partial class Gouge {
         RecordHistorySnapshot();
     }
 
+    private static void DuplicateActivePart() {
+
+        var clone = Map.Parts[_activePart].Clone();
+        Map.Parts.Add(clone);
+        ClearActiveEditState();
+        _activePart = Map.Parts.Count - 1;
+        RecordHistorySnapshot();
+    }
+
     private static void DeleteSelectedVertices() {
 
         var removedActivePart = false;
@@ -978,7 +993,7 @@ internal static partial class Gouge {
             return;
 
         var part = Map.Parts[_activePart];
-        var step = IsKeyDown(KeyboardKey.LeftAlt) || IsKeyDown(KeyboardKey.RightAlt) ? 0.1f : 1f;
+        var step = IsKeyDown(KeyboardKey.LeftAlt) || IsKeyDown(KeyboardKey.RightAlt) ? 0.125f : 1f;
         var delta = wheel * step;
 
         if (IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift))
